@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import click
 from pip._internal.commands import create_command
@@ -8,6 +8,12 @@ from pip._internal.utils.misc import redact_auth_from_url
 
 from piptools.locations import CACHE_DIR, DEFAULT_CONFIG_FILE_NAMES
 from piptools.utils import UNSAFE_PACKAGES, override_defaults_from_config_file
+
+ALL_BUILD_DISTRIBUTIONS: tuple[Literal["sdist", "wheel", "editable"], ...] = (
+    "editable",
+    "sdist",
+    "wheel",
+)
 
 
 def _get_default_option(option_name: str) -> Any:
@@ -363,4 +369,29 @@ user = click.option(
     "user_only",
     is_flag=True,
     help="Restrict attention to user directory",
+)
+
+build_deps_for = click.option(
+    "--build-deps-for",
+    "build_deps_for_distributions",
+    multiple=True,
+    type=click.Choice(ALL_BUILD_DISTRIBUTIONS),
+    help="Name of a distribution to install build dependencies for; may be used more than once. "
+    "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
+    "well.",
+)
+
+all_build_deps = click.option(
+    "--all-build-deps",
+    is_flag=True,
+    default=False,
+    help="Install build dependencies for all distributions. "
+    "Static dependencies declared in pyproject.toml will be included as well.",
+)
+
+build_deps_only = click.option(
+    "--build-deps-only",
+    is_flag=True,
+    default=False,
+    help="Install a package only if it is a build dependency.",
 )

@@ -6,32 +6,27 @@ import shlex
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, Any, BinaryIO, cast
+from typing import IO, Any, BinaryIO, Literal, cast
 
 import click
 from build import BuildBackendException
-from build.util import project_wheel_metadata
 from click.utils import LazyFile, safecall
 from pip._internal.req import InstallRequirement
 from pip._internal.req.constructors import install_req_from_line
 from pip._internal.utils.misc import redact_auth_from_url
 
 from .._compat import parse_requirements
+from ..build import build_project_metadata
 from ..cache import DependencyCache
 from ..exceptions import NoCandidateFound, PipToolsError
 from ..logging import log
 from ..repositories import LocalRequirementsRepository, PyPIRepository
 from ..repositories.base import BaseRepository
 from ..resolver import BacktrackingResolver, LegacyResolver
-from ..utils import (
-    dedup,
-    drop_extras,
-    is_pinned_requirement,
-    key_from_ireq,
-    parse_requirements_from_wheel_metadata,
-)
+from ..utils import dedup, drop_extras, is_pinned_requirement, key_from_ireq
 from ..writer import OutputWriter
 from . import options
+from .options import ALL_BUILD_DISTRIBUTIONS
 
 DEFAULT_REQUIREMENTS_FILES = (
     "requirements.in",
@@ -39,6 +34,7 @@ DEFAULT_REQUIREMENTS_FILES = (
     "pyproject.toml",
     "setup.cfg",
 )
+DEFAULT_REQUIREMENTS_FILE = "requirements.in"
 DEFAULT_REQUIREMENTS_OUTPUT_FILE = "requirements.txt"
 METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
 
@@ -114,6 +110,9 @@ def _determine_linesep(
 @options.config
 @options.no_config
 @options.constraint
+@options.build_deps_for
+@options.all_build_deps
+@options.build_deps_only
 def cli(
     ctx: click.Context,
     verbose: int,
@@ -155,12 +154,31 @@ def cli(
     config: Path | None,
     no_config: bool,
     constraint: tuple[str, ...],
+    build_deps_for_distributions: tuple[Literal["sdist", "wheel", "editable"], ...],
+    all_build_deps: bool,
+    build_deps_only: bool,
 ) -> None:
     """
     Compiles requirements.txt from requirements.in, pyproject.toml, setup.cfg,
     or setup.py specs.
     """
     log.verbosity = verbose - quiet
+
+    if all_build_deps and build_deps_for_distributions:
+        raise click.BadParameter(
+            "--build-deps-for has no effect when used with --all-build-deps"
+        )
+    elif all_build_deps:
+        build_deps_for_distributions = ALL_BUILD_DISTRIBUTIONS
+
+    if build_deps_only and not build_deps_for_distributions:
+        raise click.BadParameter(
+            "--build-deps-only requires either --build-deps-for or --all-build-deps"
+        )
+    if build_deps_only and (extras or all_extras):
+        raise click.BadParameter(
+            "--build-deps-only cannot be used with any of --extra, --all-extras"
+        )
 
     if len(src_files) == 0:
         for file_path in DEFAULT_REQUIREMENTS_FILES:
@@ -297,6 +315,13 @@ def cli(
     setup_file_found = False
     for src_file in src_files:
         is_setup_file = os.path.basename(src_file) in METADATA_FILENAMES
+        if not is_setup_file and build_deps_for_distributions:
+            msg = (
+                "--build-deps-for and --all-build-deps can be used only with the "
+                "setup.py, setup.cfg and pyproject.toml specs."
+            )
+            raise click.BadParameter(msg)
+
         if src_file == "-":
             # pip requires filenames and not files. Since we want to support
             # piping from stdin, we need to briefly save the input from stdin
@@ -320,8 +345,9 @@ def cli(
         elif is_setup_file:
             setup_file_found = True
             try:
-                metadata = project_wheel_metadata(
-                    os.path.dirname(os.path.abspath(src_file)),
+                metadata = build_project_metadata(
+                    src_file=src_file,
+                    build_distributions=build_deps_for_distributions,
                     isolated=build_isolation,
                 )
             except BuildBackendException as e:
@@ -329,17 +355,15 @@ def cli(
                 log.error(f"Failed to parse {os.path.abspath(src_file)}")
                 sys.exit(2)
 
-            constraints.extend(
-                parse_requirements_from_wheel_metadata(
-                    metadata=metadata, src_file=src_file
-                )
-            )
-
-            if all_extras:
-                if extras:
-                    msg = "--extra has no effect when used with --all-extras"
-                    raise click.BadParameter(msg)
-                extras = tuple(metadata.get_all("Provides-Extra"))
+            if not build_deps_only:
+                constraints.extend(metadata.requirements)
+                if all_extras:
+                    if extras:
+                        msg = "--extra has no effect when used with --all-extras"
+                        raise click.BadParameter(msg)
+                    extras = metadata.extras
+            if build_deps_for_distributions:
+                constraints.extend(metadata.build_requirements)
         else:
             constraints.extend(
                 parse_requirements(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
 import shutil
 import subprocess
 import sys
 from textwrap import dedent
+from typing import Any, Iterable
 from unittest import mock
 
 import pytest
@@ -1687,13 +1689,13 @@ def test_parse_requirements_build_isolation_option(
     ("option", "expected"),
     (("--build-isolation", True), ("--no-build-isolation", False)),
 )
-@mock.patch("piptools.scripts.compile.project_wheel_metadata")
-def test_project_wheel_metadata_isolation_option(
-    project_wheel_metadata, runner, option, expected
+@mock.patch("piptools.scripts.compile.build_project_metadata")
+def test_build_project_metadata_isolation_option(
+    build_project_metadata, runner, option, expected
 ):
     """
     A value of the --build-isolation/--no-build-isolation flag
-    must be passed to project_wheel_metadata().
+    must be passed to build_project_metadata().
     """
 
     with open("setup.py", "w") as package:
@@ -1708,8 +1710,8 @@ def test_project_wheel_metadata_isolation_option(
 
     runner.invoke(cli, [option])
 
-    # Ensure the options in project_wheel_metadata has the isolated kwarg
-    _, kwargs = project_wheel_metadata.call_args
+    # Ensure the options in build_project_metadata has the isolated kwarg
+    _, kwargs = build_project_metadata.call_args
     assert kwargs["isolated"] is expected
 
 
@@ -2586,7 +2588,7 @@ def test_input_formats(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_one_extra(fake_dists, runner, make_module, fname, content):
     """
-    Test one `--extra` (dev) passed, other extras (test) must be ignored.
+    Test one ``--extra`` (dev) passed, other extras (test) must be ignored.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2618,7 +2620,7 @@ def test_one_extra(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_multiple_extras(fake_dists, runner, make_module, fname, content, extra_opts):
     """
-    Test passing multiple `--extra` params.
+    Test passing multiple ``--extra`` params.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2642,7 +2644,7 @@ def test_multiple_extras(fake_dists, runner, make_module, fname, content, extra_
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_all_extras(fake_dists, runner, make_module, fname, content):
     """
-    Test passing `--all-extras` includes all applicable extras.
+    Test passing ``--all-extras`` includes all applicable extras.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2678,7 +2680,7 @@ def test_all_extras(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES[:1])
 def test_all_extras_fail_with_extra(fake_dists, runner, make_module, fname, content):
     """
-    Test that passing `--all-extras` and `--extra` fails.
+    Test that passing ``--all-extras`` and ``--extra`` fails.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2702,9 +2704,383 @@ def test_all_extras_fail_with_extra(fake_dists, runner, make_module, fname, cont
     assert exp in out.stderr
 
 
+def _parse_deps(text: str, keys: Iterable[str]) -> dict[str, dict[str, Any] | None]:
+    """Get structured representation of ``pip-compile`` output.
+
+    :param text: output from ``pip-compile``
+    :param keys: names of expected packages. If not in text the version will be set to ``None``.
+    """
+    result: dict[str, dict[str, Any] | None] = {k: None for k in keys}
+    kwargs: dict[str, Any] = {}
+    for line in text.splitlines():
+        not_comment, _, comment = line.partition("#")
+
+        pkg_name, eq_sep, pkg_version = not_comment.strip().partition("==")
+        if eq_sep:
+            kwargs = {"version": pkg_version}
+            result[pkg_name] = kwargs
+            assert not comment
+            continue
+
+        # Beginning of via section
+        before_via, via_sep, after_via = comment.partition("via")
+        if via_sep:
+            kwargs["via"] = set()
+            if after_via.strip():
+                kwargs["via"].add(after_via.strip())
+            continue
+
+        # Continuation of via section
+        if "via" in kwargs and not_comment == "    ":
+            kwargs["via"].add(comment.strip())
+
+    return result
+
+
+class Dependency:
+    def __init__(self, version: str, via: Iterable[str] | None = None) -> None:
+        self._pat = version
+        self._via = None if via is None else set(via)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, dict):
+            return False
+
+        return fnmatch.fnmatch(other["version"], self._pat) and (
+            self._via is None or set(other["via"]) == self._via
+        )
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r}, via={self._via})>"
+
+
+def test_comparing_dependency_to_unexpected_type_returns_false():
+    assert Dependency("1.0", ("some_package",)) != object()
+
+
+def test_dependency_repr_looks_reasonable():
+    assert fnmatch.fnmatch(
+        repr(Dependency("1.0", ("some_package",))),
+        "<Dependency@*(_pat='1.0', via={'some_package'})>",
+    )
+
+
+@pytest.mark.network
+@pytest.mark.parametrize(
+    ("distributions", "other_options", "expected_deps"),
+    (
+        (
+            ["editable"],
+            [],
+            {
+                "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
+                "small-fake-a": Dependency("0.1"),
+            },
+        ),
+        (
+            ["sdist"],
+            [],
+            {
+                "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
+                "small-fake-a": Dependency("0.1"),
+            },
+        ),
+        (
+            ["wheel"],
+            [],
+            {
+                "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+                "small-fake-a": Dependency("0.1"),
+                "wheel": Dependency("*"),
+            },
+        ),
+        (
+            ["editable", "sdist", "wheel"],
+            [],
+            {
+                "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
+                "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+                "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
+                "small-fake-a": Dependency("0.1"),
+                "wheel": Dependency("*"),
+            },
+        ),
+        # Test also that the via section is correct
+        # Since this is rather lengthy and we are concerned mostly with the case where more than
+        # one build-system hook requests the same dependency we only test it with this last
+        # parameter.
+        (
+            ["editable", "sdist", "wheel"],
+            ["--all-extras"],
+            {
+                "setuptools": Dependency(
+                    "*",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.requires)",
+                    ],
+                ),
+                "fake-static-build-dep": Dependency(
+                    "0.1",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.requires)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-all": Dependency(
+                    "0.2",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-sdist": Dependency(
+                    "0.3",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-wheel": Dependency(
+                    "0.4",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-editable": Dependency(
+                    "0.5",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                    ],
+                ),
+                "small-fake-a": Dependency(
+                    "0.1",
+                    [
+                        "small-fake-with-build-deps (setup.py)",
+                    ],
+                ),
+                "small-fake-b": Dependency(
+                    "0.2",
+                    [
+                        "small-fake-with-build-deps (setup.py)",
+                    ],
+                ),
+                "wheel": Dependency(
+                    "*",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+            },
+        ),
+    ),
+)
+def test_build_distribution(
+    fake_dists_with_build_deps,
+    runner,
+    tmp_path,
+    monkeypatch,
+    distributions,
+    other_options,
+    expected_deps,
+    make_package,
+    make_wheel,
+):
+    """
+    Test that when one or more ``--build-deps-for`` are given the expected packages are
+    included.
+    """
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
+        out = runner.invoke(
+            cli,
+            base_cmd + [f"--build-deps-for={d}" for d in distributions] + other_options,
+        )
+    assert out.exit_code == 0
+    assert _parse_deps(out.stderr, expected_deps) == expected_deps
+
+
+@pytest.mark.network
+def test_all_build_distributions(
+    fake_dists_with_build_deps, runner, tmp_path, monkeypatch, make_package, make_wheel
+):
+    """
+    Test that ``--all-build-deps`` is equivalent to specifying every
+    ``--build-deps-for``.
+    """
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
+        actual_out = runner.invoke(
+            cli,
+            base_cmd + ["--all-build-deps"],
+        )
+    actual_deps = _parse_deps(actual_out.stderr, [])
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
+        expected_out = runner.invoke(
+            cli,
+            base_cmd
+            + [
+                "--build-deps-for=editable",
+                "--build-deps-for=sdist",
+                "--build-deps-for=wheel",
+            ],
+        )
+    expected_deps = _parse_deps(expected_out.stderr, [])
+
+    assert actual_out.exit_code == expected_out.exit_code == 0
+    assert actual_deps == expected_deps
+
+
+@pytest.mark.network
+def test_only_build_distributions(
+    fake_dists_with_build_deps, runner, tmp_path, monkeypatch
+):
+    """
+    Test that ``--build-deps-only`` excludes dependencies other than build dependencies.
+    """
+    expected_deps = {
+        "setuptools": Dependency("*"),
+        "fake-static-build-dep": Dependency("0.1"),
+        "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+        "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
+        "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+        "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
+        "small-fake-a": None,
+        "small-fake-b": None,
+        "small-fake-c": None,
+        "small-fake-d": None,
+        "small-fake-e": None,
+        "wheel": Dependency("*"),
+    }
+
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
+        actual_out = runner.invoke(
+            cli,
+            base_cmd + ["--all-build-deps", "--build-deps-only"],
+        )
+    actual_deps = _parse_deps(actual_out.stderr, expected_deps)
+
+    assert actual_out.exit_code == 0
+    assert actual_deps == expected_deps
+
+
+# This should not depend on the metadata format so testing all cases is wasteful
+@pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES[:1])
+def test_all_build_distributions_fail_with_build_distribution(
+    fake_dists_with_build_deps, runner, make_module, fname, content
+):
+    """
+    Test that passing ``--all-build-deps`` and ``--build-deps-for`` fails.
+    """
+    meta_path = make_module(fname=fname, content=content)
+    out = runner.invoke(
+        cli,
+        [
+            "-n",
+            "--all-build-deps",
+            "--build-deps-for",
+            "sdist",
+            "--find-links",
+            fake_dists_with_build_deps,
+            "--no-annotate",
+            "--no-emit-options",
+            "--no-header",
+            "--no-build-isolation",
+            meta_path,
+        ],
+    )
+    exp = "--build-deps-for has no effect when used with --all-build-deps"
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
+def test_build_deps_only_fails_without_any_build_deps(runner):
+    """
+    Test that passing ``--build-deps-only`` fails when it is not specified how build deps should
+    be gathered.
+    """
+    out = runner.invoke(
+        cli,
+        ["--build-deps-only"],
+    )
+    exp = "--build-deps-only requires either --build-deps-for or --all-build-deps"
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
+@pytest.mark.parametrize("option", ("--all-extras", "--extra=foo"))
+def test_build_deps_only_fails_with_conflicting_options(runner, option):
+    """
+    Test that passing ``--all-build-deps`` and conflicting option fails.
+    """
+    out = runner.invoke(
+        cli,
+        [
+            "--all-build-deps",
+            "--build-deps-only",
+            option,
+        ],
+    )
+    exp = "--build-deps-only cannot be used with any of --extra, --all-extras"
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
+@pytest.mark.parametrize("option", ("--all-build-deps", "--build-deps-for=wheel"))
+def test_build_deps_fail_without_setup_file(runner, tmpdir, option):
+    """
+    Test that passing ``--build-deps-for`` or ``--all-build-deps`` fails when used with a
+    requirements file as opposed to a setup file.
+    """
+    path = os.path.join(tmpdir, "requirements.in")
+    with open(path, "w") as stream:
+        stream.write("\n")
+    out = runner.invoke(cli, ["-n", option, path])
+    exp = (
+        "--build-deps-for and --all-build-deps can be used only with the "
+        "setup.py, setup.cfg and pyproject.toml specs."
+    )
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
 def test_extras_fail_with_requirements_in(runner, tmpdir):
     """
-    Test that passing `--extra` with `requirements.in` input file fails.
+    Test that passing ``--extra`` with ``requirements.in`` input file fails.
     """
     path = os.path.join(tmpdir, "requirements.in")
     with open(path, "w") as stream:
@@ -2717,7 +3093,7 @@ def test_extras_fail_with_requirements_in(runner, tmpdir):
 
 def test_cli_compile_strip_extras(runner, make_package, make_sdist, tmpdir):
     """
-    Assures that --strip-extras removes mention of extras from output.
+    Assures that ``--strip-extras`` removes mention of extras from output.
     """
     test_package_1 = make_package(
         "test_package_1", version="0.1", extras_require={"more": "test_package_2"}

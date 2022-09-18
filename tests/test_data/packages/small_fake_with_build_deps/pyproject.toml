@@ -1,0 +1,4 @@
+[build-system]
+requires = ["setuptools", "fake-static-build-dep"]
+build-backend = "backend"
+backend-path = ["backend"]

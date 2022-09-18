@@ -319,6 +319,7 @@ def make_package(tmp_path_factory):
                         url="https://github.com/jazzband/pip-tools",
                         install_requires={install_requires_str},
                         extras_require={extras_require},
+                        py_modules=[{name!r}],
                     )
                     """
                 )
@@ -326,6 +327,9 @@ def make_package(tmp_path_factory):
 
         # Create a README to avoid setuptools warnings.
         (package_dir / "README").touch()
+
+        # Create a module to make the package importable.
+        (package_dir / name).with_suffix(".py").touch()
 
         return package_dir
 
@@ -418,10 +422,28 @@ def fake_dists(tmp_path_factory, make_package, make_wheel):
         make_package("small-fake-a", version="0.1"),
         make_package("small-fake-b", version="0.2"),
         make_package("small-fake-c", version="0.3"),
+        make_package("small-fake-d", version="0.4"),
+        make_package("small-fake-e", version="0.5"),
+        make_package("small-fake-f", version="0.6"),
     ]
     for pkg in pkgs:
         make_wheel(pkg, dists_path)
     return dists_path
+
+
+@pytest.fixture
+def fake_dists_with_build_deps(fake_dists, make_package, make_wheel):
+    """Generate distribution packages with names that make sense for testing build deps."""
+    pkgs = [
+        make_package("fake_static_build_dep", version="0.1"),
+        make_package("fake_dynamic_build_dep_for_all", version="0.2"),
+        make_package("fake_dynamic_build_dep_for_sdist", version="0.3"),
+        make_package("fake_dynamic_build_dep_for_wheel", version="0.4"),
+        make_package("fake_dynamic_build_dep_for_editable", version="0.5"),
+    ]
+    for pkg in pkgs:
+        make_wheel(pkg, fake_dists)
+    return fake_dists
 
 
 @pytest.fixture
