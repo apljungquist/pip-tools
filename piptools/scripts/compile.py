@@ -6,10 +6,11 @@ import shlex
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, Any, BinaryIO, cast
+from typing import IO, Any, BinaryIO, Iterable, cast
 
 import click
-from build import BuildBackendException
+import pyproject_hooks
+from build import BuildBackendException, ProjectBuilder
 from build.util import project_wheel_metadata
 from click.utils import LazyFile, safecall
 from pip._internal.commands import create_command
@@ -42,8 +43,20 @@ DEFAULT_REQUIREMENTS_FILES = (
     "pyproject.toml",
     "setup.cfg",
 )
+ALL_BUILD_DISTRIBUTIONS = frozenset({"editable", "sdist", "wheel"})
+DEFAULT_REQUIREMENTS_FILE = "requirements.in"
 DEFAULT_REQUIREMENTS_OUTPUT_FILE = "requirements.txt"
 METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
+
+
+def _build_requirements(src_dir: str, distributions: Iterable[str]) -> set[str]:
+    builder = ProjectBuilder(src_dir, runner=pyproject_hooks.quiet_subprocess_runner)
+    # It is not clear that it should be possible to use `get_requires_for_build` with
+    # "editable" but it seems to work in practice.
+    result = set(builder.build_system_requires)
+    for dist in distributions:
+        result.update(builder.get_requires_for_build(dist))
+    return result
 
 
 def _get_default_option(option_name: str) -> Any:
@@ -340,6 +353,27 @@ def _determine_linesep(
     multiple=True,
     help="Constrain versions using the given constraints file; may be used more than once.",
 )
+@click.option(
+    "--build-deps-for",
+    "build_deps_for_distributions",
+    multiple=True,
+    type=click.Choice(("editable", "sdist", "wheel")),
+    help="Name of a distribution to install build dependencies for; may be used more than once. "
+    "Static dependencies declared in pyproject.toml will be included as well.",
+)
+@click.option(
+    "--all-build-deps",
+    is_flag=True,
+    default=False,
+    help="Install build dependencies for all distributions."
+    "Static dependencies declared in pyproject.toml will be included as well.",
+)
+@click.option(
+    "--build-deps-only",
+    is_flag=True,
+    default=False,
+    help="Install a package only if they it is a build dependency.",
+)
 def cli(
     ctx: click.Context,
     verbose: int,
@@ -381,12 +415,20 @@ def cli(
     config: Path | None,
     no_config: bool,
     constraint: tuple[str, ...],
+    build_deps_for_distributions: tuple[str, ...],
+    all_build_deps: bool,
+    build_deps_only: bool,
 ) -> None:
     """
     Compiles requirements.txt from requirements.in, pyproject.toml, setup.cfg,
     or setup.py specs.
     """
     log.verbosity = verbose - quiet
+
+    if build_deps_only and (extras or all_extras):
+        raise click.BadParameter(
+            "--build-deps-only cannot be used with any of --extra, --all-extras"
+        )
 
     if len(src_files) == 0:
         for file_path in DEFAULT_REQUIREMENTS_FILES:
@@ -523,6 +565,13 @@ def cli(
     setup_file_found = False
     for src_file in src_files:
         is_setup_file = os.path.basename(src_file) in METADATA_FILENAMES
+        if not is_setup_file and build_deps_only:
+            msg = (
+                "--build-deps-only makes sense only with the"
+                " setup.py, setup.cfg and pyproject.toml specs."
+            )
+            raise click.BadParameter(msg)
+
         if src_file == "-":
             # pip requires filenames and not files. Since we want to support
             # piping from stdin, we need to briefly save the input from stdin
@@ -545,9 +594,10 @@ def cli(
             constraints.extend(reqs)
         elif is_setup_file:
             setup_file_found = True
+            src_dir = os.path.dirname(os.path.abspath(src_file))
             try:
                 metadata = project_wheel_metadata(
-                    os.path.dirname(os.path.abspath(src_file)),
+                    src_dir,
                     isolated=build_isolation,
                 )
             except BuildBackendException as e:
@@ -555,17 +605,37 @@ def cli(
                 log.error(f"Failed to parse {os.path.abspath(src_file)}")
                 sys.exit(2)
 
-            constraints.extend(
-                parse_requirements_from_wheel_metadata(
-                    metadata=metadata, src_file=src_file
+            if not build_deps_only:
+                constraints.extend(
+                    parse_requirements_from_wheel_metadata(
+                        metadata=metadata, src_file=src_file
+                    )
                 )
-            )
-
-            if all_extras:
-                if extras:
-                    msg = "--extra has no effect when used with --all-extras"
+                if all_extras:
+                    if extras:
+                        msg = "--extra has no effect when used with --all-extras"
+                        raise click.BadParameter(msg)
+                    extras = tuple(metadata.get_all("Provides-Extra"))
+            if all_build_deps:
+                if build_deps_for_distributions:
+                    msg = (
+                        "--build-deps-for has no effect when used with "
+                        "--all-build-deps"
+                    )
                     raise click.BadParameter(msg)
-                extras = tuple(metadata.get_all("Provides-Extra"))
+                build_deps_for_distributions = tuple(ALL_BUILD_DISTRIBUTIONS)
+            if build_deps_for_distributions:
+                package_name = metadata.get_all("Name")[0]
+                constraints.extend(
+                    [
+                        install_req_from_line(
+                            req, comes_from=f"{package_name} ({src_file})"
+                        )
+                        for req in _build_requirements(
+                            src_dir, build_deps_for_distributions
+                        )
+                    ]
+                )
         else:
             constraints.extend(
                 parse_requirements(

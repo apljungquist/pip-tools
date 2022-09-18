@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 from textwrap import dedent
+from typing import Iterable
 from unittest import mock
 
 import pytest
@@ -2619,7 +2622,7 @@ def test_input_formats(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_one_extra(fake_dists, runner, make_module, fname, content):
     """
-    Test one `--extra` (dev) passed, other extras (test) must be ignored.
+    Test one ``--extra`` (dev) passed, other extras (test) must be ignored.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2651,7 +2654,7 @@ def test_one_extra(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_multiple_extras(fake_dists, runner, make_module, fname, content, extra_opts):
     """
-    Test passing multiple `--extra` params.
+    Test passing multiple ``--extra`` params.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2675,7 +2678,7 @@ def test_multiple_extras(fake_dists, runner, make_module, fname, content, extra_
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES)
 def test_all_extras(fake_dists, runner, make_module, fname, content):
     """
-    Test passing `--all-extras` includes all applicable extras.
+    Test passing ``--all-extras`` includes all applicable extras.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2711,7 +2714,7 @@ def test_all_extras(fake_dists, runner, make_module, fname, content):
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES[:1])
 def test_all_extras_fail_with_extra(fake_dists, runner, make_module, fname, content):
     """
-    Test that passing `--all-extras` and `--extra` fails.
+    Test that passing ``--all-extras`` and ``--extra`` fails.
     """
     meta_path = make_module(fname=fname, content=content)
     out = runner.invoke(
@@ -2735,9 +2738,272 @@ def test_all_extras_fail_with_extra(fake_dists, runner, make_module, fname, cont
     assert exp in out.stderr
 
 
+def _parse_deps(text: str, keys: Iterable[str]) -> dict[str, str | None]:
+    """Get package name to version mapping from ``pip-compile`` output.
+
+    :param text: output from ``pip-compile``
+    :param keys: names of expected packages. If not in text the version will be set to ``None``.
+    """
+    result: dict[str, str | None] = {k: None for k in keys}
+
+    for line in text.splitlines():
+        pkg_spec = line.split("#")[0].strip()
+        pkg_name, eq_sep, pkg_version = pkg_spec.partition("==")
+
+        if not eq_sep:
+            continue
+
+        result[pkg_name] = pkg_version
+
+    return result
+
+
+class Version:
+    def __init__(self, expected: str) -> None:
+        self._pat = expected
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, str):
+            return False
+
+        return fnmatch.fnmatch(other, self._pat)
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r})>"
+
+
+# This can be removed when support for python<3.8 is dropped
+def copytree_dirs_exist_ok(
+    src_top: str | os.PathLike[str], dst_top: str | os.PathLike[str]
+) -> None:
+    src_top = pathlib.Path(src_top)
+    dst_top = pathlib.Path(dst_top)
+
+    dst_top.mkdir(exist_ok=True)
+    for src in src_top.iterdir():
+        dst = dst_top / src.name
+        if src.is_file():
+            shutil.copy2(src, dst)
+        else:
+            shutil.copytree(src, dst)
+
+
+@pytest.mark.network
+@pytest.mark.parametrize(
+    ("distributions", "other_options", "expected_deps"),
+    (
+        (
+            ["editable"],
+            [],
+            {
+                "setuptools": Version("*"),
+                "small-fake-c": Version("0.3"),
+                "small-fake-d": Version("0.4"),
+            },
+        ),
+        (
+            ["sdist"],
+            [],
+            {
+                "setuptools": Version("*"),
+                "small-fake-a": Version("0.1"),
+                "small-fake-d": Version("0.4"),
+            },
+        ),
+        (
+            ["wheel"],
+            [],
+            {
+                "setuptools": Version("*"),
+                "small-fake-b": Version("0.2"),
+                "small-fake-d": Version("0.4"),
+                "wheel": Version("*"),
+            },
+        ),
+        (
+            ["editable", "sdist", "wheel"],
+            [],
+            {
+                "setuptools": Version("*"),
+                "small-fake-a": Version("0.1"),
+                "small-fake-b": Version("0.2"),
+                "small-fake-c": Version("0.3"),
+                "small-fake-d": Version("0.4"),
+                "wheel": Version("*"),
+            },
+        ),
+        (
+            ["editable", "sdist", "wheel"],
+            ["--all-extras"],
+            {
+                "setuptools": Version("*"),
+                "small-fake-a": Version("0.1"),
+                "small-fake-b": Version("0.2"),
+                "small-fake-c": Version("0.3"),
+                "small-fake-d": Version("0.4"),
+                "small-fake-e": Version("0.5"),
+                "wheel": Version("*"),
+            },
+        ),
+    ),
+)
+def test_build_distribution(
+    fake_dists,
+    runner,
+    tmp_path,
+    monkeypatch,
+    distributions,
+    other_options,
+    expected_deps,
+    make_package,
+    make_wheel,
+):
+    """
+    Test that when one or more ``--build-deps-for`` are given the expected packages are
+    included.
+    """
+    make_wheel(make_package("small-fake-d", version="0.4"), fake_dists),
+    make_wheel(make_package("small-fake-e", version="0.5"), fake_dists),
+
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        out = runner.invoke(
+            cli,
+            base_cmd + [f"--build-deps-for={d}" for d in distributions] + other_options,
+        )
+
+    assert out.exit_code == 0
+    assert _parse_deps(out.stderr, expected_deps) == expected_deps
+
+
+@pytest.mark.network
+def test_all_build_distributions(
+    fake_dists, runner, tmp_path, monkeypatch, make_package, make_wheel
+):
+    """
+    Test that ``--all-build-deps`` is equivalent to specifying every
+    ``--build-deps-for``.
+    """
+    make_wheel(make_package("small-fake-d", version="0.4"), fake_dists),
+
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        actual_out = runner.invoke(
+            cli,
+            base_cmd + ["--all-build-deps"],
+        )
+    actual_deps = _parse_deps(actual_out.stderr, [])
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        expected_out = runner.invoke(
+            cli,
+            base_cmd
+            + [
+                "--build-deps-for=editable",
+                "--build-deps-for=sdist",
+                "--build-deps-for=wheel",
+            ],
+        )
+    expected_deps = _parse_deps(expected_out.stderr, [])
+
+    assert actual_out.exit_code == expected_out.exit_code == 0
+    assert actual_deps == expected_deps
+
+
+@pytest.mark.network
+def test_only_build_distributions(fake_dists, runner, tmp_path, monkeypatch):
+    """
+    Test that ``--build-deps-only`` excludes dependencies other than build dependencies.
+    """
+    expected_deps = {
+        "setuptools": Version("*"),
+        "small-fake-a": Version("0.1"),
+        "small-fake-b": Version("0.2"),
+        "small-fake-c": Version("0.3"),
+        "small-fake-d": None,
+        "small-fake-e": None,
+        "wheel": Version("*"),
+    }
+
+    # When used as argument to the runner it is not passed to pip
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    base_cmd = ["-n", "--allow-unsafe"]
+
+    with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
+        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        actual_out = runner.invoke(
+            cli,
+            base_cmd + ["--all-build-deps", "--build-deps-only"],
+        )
+    actual_deps = _parse_deps(actual_out.stderr, expected_deps)
+
+    assert actual_out.exit_code == 0
+    assert actual_deps == expected_deps
+
+
+# This should not depend on the metadata format so testing all cases is wasteful
+@pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES[:1])
+def test_all_build_distributions_fail_with_build_distribution(
+    fake_dists, runner, make_module, fname, content
+):
+    """
+    Test that passing ``--all-build-deps`` and ``--build-deps-for`` fails.
+    """
+    meta_path = make_module(fname=fname, content=content)
+    out = runner.invoke(
+        cli,
+        [
+            "-n",
+            "--all-build-deps",
+            "--build-deps-for",
+            "sdist",
+            "--find-links",
+            fake_dists,
+            "--no-annotate",
+            "--no-emit-options",
+            "--no-header",
+            "--no-build-isolation",
+            meta_path,
+        ],
+    )
+    assert out.exit_code == 2
+    exp = "--build-deps-for has no effect when used with --all-build-deps"
+    assert exp in out.stderr
+
+
+@pytest.mark.parametrize(("option"), ("--all-extras", "--extra=foo"))
+def test_all_build_distributions_fail_non_build_distribution_options(runner, option):
+    """
+    Test that passing ``--all-build-deps`` and conflicting option fails.
+    """
+    out = runner.invoke(
+        cli,
+        [
+            "--all-build-deps",
+            "--build-deps-only",
+            option,
+        ],
+    )
+    assert out.exit_code == 2
+    exp = "--build-deps-only cannot be used with any of --extra, --all-extras"
+    assert exp in out.stderr
+
+
 def test_extras_fail_with_requirements_in(runner, tmpdir):
     """
-    Test that passing `--extra` with `requirements.in` input file fails.
+    Test that passing ``--extra`` with ``requirements.in`` input file fails.
     """
     path = os.path.join(tmpdir, "requirements.in")
     with open(path, "w") as stream:
@@ -2750,7 +3016,7 @@ def test_extras_fail_with_requirements_in(runner, tmpdir):
 
 def test_cli_compile_strip_extras(runner, make_package, make_sdist, tmpdir):
     """
-    Assures that --strip-extras removes mention of extras from output.
+    Assures that ``--strip-extras`` removes mention of extras from output.
     """
     test_package_1 = make_package(
         "test_package_1", version="0.1", extras_require={"more": "test_package_2"}
