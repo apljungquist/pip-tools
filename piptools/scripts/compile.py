@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import itertools
 import os
 import shlex
@@ -49,14 +50,24 @@ DEFAULT_REQUIREMENTS_OUTPUT_FILE = "requirements.txt"
 METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
 
 
-def _build_requirements(src_dir: str, distributions: Iterable[str]) -> set[str]:
+def _build_requirements(
+    src_dir: str, src_file: str, distributions: Iterable[str], package_name: str
+) -> list[InstallRequirement]:
     builder = ProjectBuilder(src_dir, runner=pyproject_hooks.quiet_subprocess_runner)
     # It is not clear that it should be possible to use `get_requires_for_build` with
     # "editable" but it seems to work in practice.
-    result = set(builder.build_system_requires)
+    result = collections.defaultdict(set)
+    for req in builder.build_system_requires:
+        result[req].add(f"{package_name} ({src_file}::build-system.requires)")
     for dist in distributions:
-        result.update(builder.get_requires_for_build(dist))
-    return result
+        for req in builder.get_requires_for_build(dist):
+            result[req].add(
+                f"{package_name} ({src_file}::build-system.backend::{dist})"
+            )
+
+    return [
+        install_req_from_line(k, comes_from=v) for k, vs in result.items() for v in vs
+    ]
 
 
 def _get_default_option(option_name: str) -> Any:
@@ -627,14 +638,15 @@ def cli(
             if build_deps_for_distributions:
                 package_name = metadata.get_all("Name")[0]
                 constraints.extend(
-                    [
-                        install_req_from_line(
-                            req, comes_from=f"{package_name} ({src_file})"
-                        )
-                        for req in _build_requirements(
-                            src_dir, build_deps_for_distributions
-                        )
-                    ]
+                    _build_requirements(
+                        # Build requirements will only be present if a pyproject.toml file exists,
+                        # but if there is also a setup.py file then only that will be explicitly
+                        # processed due to the order of `DEFAULT_REQUIREMENTS_FILES`.
+                        src_dir,
+                        "pyproject.toml",
+                        build_deps_for_distributions,
+                        package_name,
+                    )
                 )
         else:
             constraints.extend(

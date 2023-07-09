@@ -569,12 +569,14 @@ asgiref==3.5.2
     # via django
 attrs==22.1.0
     # via pytest
+backports-zoneinfo==0.2.1
+    # via django
 django==4.1
     # via my-cool-django-app (pyproject.toml)
 editables==0.3
     # via hatchling
 hatchling==1.11.1
-    # via my-cool-django-app (pyproject.toml)
+    # via my-cool-django-app (pyproject.toml::build-system.requires)
 iniconfig==1.1.1
     # via pytest
 packaging==21.3
@@ -600,6 +602,13 @@ tomli==2.0.1
     #   hatchling
     #   pytest
 ```
+
+Some build backends may also request build dependencies dynamically using the hooks described in PEP 517 and PEP 660.
+This will be indicated in the output with one of the following suffixes:
+
+- `(pyproject.toml::build-system.backend::editable)`
+- `(pyproject.toml::build-system.backend::sdist)`
+- `(pyproject.toml::build-system.backend::wheel)`
 
 ### Other useful tools
 

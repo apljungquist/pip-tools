@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from textwrap import dedent
-from typing import Iterable
+from typing import Any, Iterable
 from unittest import mock
 
 import pytest
@@ -2738,38 +2738,54 @@ def test_all_extras_fail_with_extra(fake_dists, runner, make_module, fname, cont
     assert exp in out.stderr
 
 
-def _parse_deps(text: str, keys: Iterable[str]) -> dict[str, str | None]:
-    """Get package name to version mapping from ``pip-compile`` output.
+def _parse_deps(text: str, keys: Iterable[str]) -> dict[str, dict[str, Any] | None]:
+    """Get structured representation of ``pip-compile`` output.
 
     :param text: output from ``pip-compile``
     :param keys: names of expected packages. If not in text the version will be set to ``None``.
     """
-    result: dict[str, str | None] = {k: None for k in keys}
-
+    result: dict[str, dict[str, Any] | None] = {k: None for k in keys}
+    kwargs: dict[str, Any] = {}
     for line in text.splitlines():
-        pkg_spec = line.split("#")[0].strip()
-        pkg_name, eq_sep, pkg_version = pkg_spec.partition("==")
+        not_comment, _, comment = line.partition("#")
 
-        if not eq_sep:
+        pkg_name, eq_sep, pkg_version = not_comment.strip().partition("==")
+        if eq_sep:
+            kwargs = {"version": pkg_version}
+            result[pkg_name] = kwargs
+            assert not comment
             continue
 
-        result[pkg_name] = pkg_version
+        # Beginning of via section
+        before_via, via_sep, after_via = comment.partition("via")
+        if via_sep:
+            kwargs["via"] = set()
+            if after_via.strip():
+                kwargs["via"].add(after_via.strip())
+            continue
+
+        # Continuation of via section
+        if "via" in kwargs and not_comment == "    ":
+            kwargs["via"].add(comment.strip())
 
     return result
 
 
-class Version:
-    def __init__(self, expected: str) -> None:
-        self._pat = expected
+class Dependency:
+    def __init__(self, version: str, via: Iterable[str] | None = None) -> None:
+        self._pat = version
+        self._via = None if via is None else set(via)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, str):
+        if not isinstance(other, dict):
             return False
 
-        return fnmatch.fnmatch(other, self._pat)
+        return fnmatch.fnmatch(other["version"], self._pat) and (
+            self._via is None or set(other["via"]) == self._via
+        )
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r})>"
+        return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r}, via={self._via})>"
 
 
 # This can be removed when support for python<3.8 is dropped
@@ -2796,53 +2812,110 @@ def copytree_dirs_exist_ok(
             ["editable"],
             [],
             {
-                "setuptools": Version("*"),
-                "small-fake-c": Version("0.3"),
-                "small-fake-d": Version("0.4"),
+                "setuptools": Dependency("*"),
+                "small-fake-c": Dependency("0.3"),
+                "small-fake-d": Dependency("0.4"),
+                "small-fake-f": Dependency("0.6"),
             },
         ),
         (
             ["sdist"],
             [],
             {
-                "setuptools": Version("*"),
-                "small-fake-a": Version("0.1"),
-                "small-fake-d": Version("0.4"),
+                "setuptools": Dependency("*"),
+                "small-fake-a": Dependency("0.1"),
+                "small-fake-d": Dependency("0.4"),
+                "small-fake-f": Dependency("0.6"),
             },
         ),
         (
             ["wheel"],
             [],
             {
-                "setuptools": Version("*"),
-                "small-fake-b": Version("0.2"),
-                "small-fake-d": Version("0.4"),
-                "wheel": Version("*"),
+                "setuptools": Dependency("*"),
+                "small-fake-b": Dependency("0.2"),
+                "small-fake-d": Dependency("0.4"),
+                "small-fake-f": Dependency("0.6"),
+                "wheel": Dependency("*"),
             },
         ),
         (
             ["editable", "sdist", "wheel"],
             [],
             {
-                "setuptools": Version("*"),
-                "small-fake-a": Version("0.1"),
-                "small-fake-b": Version("0.2"),
-                "small-fake-c": Version("0.3"),
-                "small-fake-d": Version("0.4"),
-                "wheel": Version("*"),
+                "setuptools": Dependency("*"),
+                "small-fake-a": Dependency("0.1"),
+                "small-fake-b": Dependency("0.2"),
+                "small-fake-c": Dependency("0.3"),
+                "small-fake-d": Dependency("0.4"),
+                "small-fake-f": Dependency("0.6"),
+                "wheel": Dependency("*"),
             },
         ),
+        # Test also that the via section is correct
+        # Since this is rather lengthy and we are concerned mostly with the case where more than
+        # one build-system hook requests the same dependency we only test it with this last
+        # parameter.
         (
             ["editable", "sdist", "wheel"],
             ["--all-extras"],
             {
-                "setuptools": Version("*"),
-                "small-fake-a": Version("0.1"),
-                "small-fake-b": Version("0.2"),
-                "small-fake-c": Version("0.3"),
-                "small-fake-d": Version("0.4"),
-                "small-fake-e": Version("0.5"),
-                "wheel": Version("*"),
+                "setuptools": Dependency(
+                    "*",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.requires)",
+                    ],
+                ),
+                "small-fake-a": Dependency(
+                    "0.1",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                    ],
+                ),
+                "small-fake-b": Dependency(
+                    "0.2",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "small-fake-c": Dependency(
+                    "0.3",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                    ],
+                ),
+                "small-fake-d": Dependency(
+                    "0.4",
+                    [
+                        "small-fake-with-build-deps (setup.py)",
+                    ],
+                ),
+                "small-fake-e": Dependency(
+                    "0.5",
+                    [
+                        "small-fake-with-build-deps (setup.py)",
+                    ],
+                ),
+                "small-fake-f": Dependency(
+                    "0.6",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "wheel": Dependency(
+                    "*",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
             },
         ),
     ),
@@ -2862,9 +2935,6 @@ def test_build_distribution(
     Test that when one or more ``--build-deps-for`` are given the expected packages are
     included.
     """
-    make_wheel(make_package("small-fake-d", version="0.4"), fake_dists),
-    make_wheel(make_package("small-fake-e", version="0.5"), fake_dists),
-
     # When used as argument to the runner it is not passed to pip
     monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
     src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
@@ -2876,7 +2946,6 @@ def test_build_distribution(
             cli,
             base_cmd + [f"--build-deps-for={d}" for d in distributions] + other_options,
         )
-
     assert out.exit_code == 0
     assert _parse_deps(out.stderr, expected_deps) == expected_deps
 
@@ -2889,8 +2958,6 @@ def test_all_build_distributions(
     Test that ``--all-build-deps`` is equivalent to specifying every
     ``--build-deps-for``.
     """
-    make_wheel(make_package("small-fake-d", version="0.4"), fake_dists),
-
     # When used as argument to the runner it is not passed to pip
     monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
     src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
@@ -2927,13 +2994,14 @@ def test_only_build_distributions(fake_dists, runner, tmp_path, monkeypatch):
     Test that ``--build-deps-only`` excludes dependencies other than build dependencies.
     """
     expected_deps = {
-        "setuptools": Version("*"),
-        "small-fake-a": Version("0.1"),
-        "small-fake-b": Version("0.2"),
-        "small-fake-c": Version("0.3"),
+        "setuptools": Dependency("*"),
+        "small-fake-a": Dependency("0.1"),
+        "small-fake-b": Dependency("0.2"),
+        "small-fake-c": Dependency("0.3"),
         "small-fake-d": None,
         "small-fake-e": None,
-        "wheel": Version("*"),
+        "small-fake-f": Dependency("0.6"),
+        "wheel": Dependency("*"),
     }
 
     # When used as argument to the runner it is not passed to pip
