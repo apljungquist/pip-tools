@@ -428,6 +428,23 @@ def fake_dists(tmpdir, make_package, make_wheel):
 
 
 @pytest.fixture
+def fake_dists_with_build_deps(fake_dists, make_package, make_wheel):
+    """
+    Generate distribution packages with names that make sense for testing build deps
+    """
+    pkgs = [
+        make_package("fake_static_build_dep", version="0.1"),
+        make_package("fake_dynamic_build_dep_for_all", version="0.2"),
+        make_package("fake_dynamic_build_dep_for_sdist", version="0.3"),
+        make_package("fake_dynamic_build_dep_for_wheel", version="0.4"),
+        make_package("fake_dynamic_build_dep_for_editable", version="0.5"),
+    ]
+    for pkg in pkgs:
+        make_wheel(pkg, fake_dists)
+    return fake_dists
+
+
+@pytest.fixture
 def venv(tmp_path):
     """Create a temporary venv and get the path of its directory of executables."""
     subprocess.run(

@@ -2813,9 +2813,10 @@ def copytree_dirs_exist_ok(
             [],
             {
                 "setuptools": Dependency("*"),
-                "small-fake-c": Dependency("0.3"),
-                "small-fake-d": Dependency("0.4"),
-                "small-fake-f": Dependency("0.6"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
+                "small-fake-a": Dependency("0.1"),
             },
         ),
         (
@@ -2823,9 +2824,10 @@ def copytree_dirs_exist_ok(
             [],
             {
                 "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
                 "small-fake-a": Dependency("0.1"),
-                "small-fake-d": Dependency("0.4"),
-                "small-fake-f": Dependency("0.6"),
             },
         ),
         (
@@ -2833,9 +2835,10 @@ def copytree_dirs_exist_ok(
             [],
             {
                 "setuptools": Dependency("*"),
-                "small-fake-b": Dependency("0.2"),
-                "small-fake-d": Dependency("0.4"),
-                "small-fake-f": Dependency("0.6"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+                "small-fake-a": Dependency("0.1"),
                 "wheel": Dependency("*"),
             },
         ),
@@ -2844,11 +2847,12 @@ def copytree_dirs_exist_ok(
             [],
             {
                 "setuptools": Dependency("*"),
+                "fake-static-build-dep": Dependency("0.1"),
+                "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+                "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
+                "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+                "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
                 "small-fake-a": Dependency("0.1"),
-                "small-fake-b": Dependency("0.2"),
-                "small-fake-c": Dependency("0.3"),
-                "small-fake-d": Dependency("0.4"),
-                "small-fake-f": Dependency("0.6"),
                 "wheel": Dependency("*"),
             },
         ),
@@ -2866,48 +2870,54 @@ def copytree_dirs_exist_ok(
                         "small-fake-with-build-deps (pyproject.toml::build-system.requires)",
                     ],
                 ),
+                "fake-static-build-dep": Dependency(
+                    "0.1",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.requires)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-all": Dependency(
+                    "0.2",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-sdist": Dependency(
+                    "0.3",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-wheel": Dependency(
+                    "0.4",
+                    [
+                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
+                    ],
+                ),
+                "fake-dynamic-build-dep-for-editable": Dependency(
+                    "0.5",
+                    [
+                        (
+                            "small-fake-with-build-deps"
+                            " (pyproject.toml::build-system.backend::editable)"
+                        ),
+                    ],
+                ),
                 "small-fake-a": Dependency(
                     "0.1",
                     [
-                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
+                        "small-fake-with-build-deps (setup.py)",
                     ],
                 ),
                 "small-fake-b": Dependency(
                     "0.2",
                     [
-                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
-                    ],
-                ),
-                "small-fake-c": Dependency(
-                    "0.3",
-                    [
-                        (
-                            "small-fake-with-build-deps"
-                            " (pyproject.toml::build-system.backend::editable)"
-                        ),
-                    ],
-                ),
-                "small-fake-d": Dependency(
-                    "0.4",
-                    [
                         "small-fake-with-build-deps (setup.py)",
-                    ],
-                ),
-                "small-fake-e": Dependency(
-                    "0.5",
-                    [
-                        "small-fake-with-build-deps (setup.py)",
-                    ],
-                ),
-                "small-fake-f": Dependency(
-                    "0.6",
-                    [
-                        (
-                            "small-fake-with-build-deps"
-                            " (pyproject.toml::build-system.backend::editable)"
-                        ),
-                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)",
-                        "small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)",
                     ],
                 ),
                 "wheel": Dependency(
@@ -2921,7 +2931,7 @@ def copytree_dirs_exist_ok(
     ),
 )
 def test_build_distribution(
-    fake_dists,
+    fake_dists_with_build_deps,
     runner,
     tmp_path,
     monkeypatch,
@@ -2936,7 +2946,7 @@ def test_build_distribution(
     included.
     """
     # When used as argument to the runner it is not passed to pip
-    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
     src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
     base_cmd = ["-n", "--allow-unsafe"]
 
@@ -2952,14 +2962,14 @@ def test_build_distribution(
 
 @pytest.mark.network
 def test_all_build_distributions(
-    fake_dists, runner, tmp_path, monkeypatch, make_package, make_wheel
+    fake_dists_with_build_deps, runner, tmp_path, monkeypatch, make_package, make_wheel
 ):
     """
     Test that ``--all-build-deps`` is equivalent to specifying every
     ``--build-deps-for``.
     """
     # When used as argument to the runner it is not passed to pip
-    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
     src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
     base_cmd = ["-n", "--allow-unsafe"]
 
@@ -2989,23 +2999,29 @@ def test_all_build_distributions(
 
 
 @pytest.mark.network
-def test_only_build_distributions(fake_dists, runner, tmp_path, monkeypatch):
+def test_only_build_distributions(
+    fake_dists_with_build_deps, runner, tmp_path, monkeypatch
+):
     """
     Test that ``--build-deps-only`` excludes dependencies other than build dependencies.
     """
     expected_deps = {
         "setuptools": Dependency("*"),
-        "small-fake-a": Dependency("0.1"),
-        "small-fake-b": Dependency("0.2"),
-        "small-fake-c": Dependency("0.3"),
+        "fake-static-build-dep": Dependency("0.1"),
+        "fake-dynamic-build-dep-for-all": Dependency("0.2"),
+        "fake-dynamic-build-dep-for-sdist": Dependency("0.3"),
+        "fake-dynamic-build-dep-for-wheel": Dependency("0.4"),
+        "fake-dynamic-build-dep-for-editable": Dependency("0.5"),
+        "small-fake-a": None,
+        "small-fake-b": None,
+        "small-fake-c": None,
         "small-fake-d": None,
         "small-fake-e": None,
-        "small-fake-f": Dependency("0.6"),
         "wheel": Dependency("*"),
     }
 
     # When used as argument to the runner it is not passed to pip
-    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists)
+    monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
     src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
     base_cmd = ["-n", "--allow-unsafe"]
 
@@ -3024,7 +3040,7 @@ def test_only_build_distributions(fake_dists, runner, tmp_path, monkeypatch):
 # This should not depend on the metadata format so testing all cases is wasteful
 @pytest.mark.parametrize(("fname", "content"), METADATA_TEST_CASES[:1])
 def test_all_build_distributions_fail_with_build_distribution(
-    fake_dists, runner, make_module, fname, content
+    fake_dists_with_build_deps, runner, make_module, fname, content
 ):
     """
     Test that passing ``--all-build-deps`` and ``--build-deps-for`` fails.
@@ -3038,7 +3054,7 @@ def test_all_build_distributions_fail_with_build_distribution(
             "--build-deps-for",
             "sdist",
             "--find-links",
-            fake_dists,
+            fake_dists_with_build_deps,
             "--no-annotate",
             "--no-emit-options",
             "--no-header",

@@ -6,9 +6,9 @@ setup(
     name="small_fake_with_build_deps",
     version=0.1,
     install_requires=[
-        "small_fake_d",
+        "small_fake_a",
     ],
     extras_require={
-        "e": ["small_fake_e"],
+        "b": ["small_fake_b"],
     },
 )

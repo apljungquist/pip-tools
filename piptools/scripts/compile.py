@@ -59,6 +59,7 @@ def _build_requirements(
     result = collections.defaultdict(set)
     for req in builder.build_system_requires:
         result[req].add(f"{package_name} ({src_file}::build-system.requires)")
+        # TODO: Follow PEP and install deps
     for dist in distributions:
         for req in builder.get_requires_for_build(dist):
             result[req].add(
