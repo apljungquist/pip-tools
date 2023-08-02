@@ -319,6 +319,7 @@ def make_package(tmp_path):
                         url="https://github.com/jazzband/pip-tools",
                         install_requires={install_requires_str},
                         extras_require={extras_require},
+                        py_modules=[{name!r}],
                     )
                     """
                 )
@@ -326,6 +327,9 @@ def make_package(tmp_path):
 
         # Create a README to avoid setuptools warnings.
         (package_dir / "README").touch()
+
+        # Create a module to make the package importable.
+        (package_dir / name).with_suffix(".py").touch()
 
         return package_dir
 

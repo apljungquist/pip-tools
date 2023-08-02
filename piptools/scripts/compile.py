@@ -12,6 +12,7 @@ from typing import IO, Any, BinaryIO, Iterable, cast
 import click
 import pyproject_hooks
 from build import BuildBackendException, ProjectBuilder
+from build.env import IsolatedEnvBuilder
 from build.util import project_wheel_metadata
 from click.utils import LazyFile, safecall
 from pip._internal.commands import create_command
@@ -53,18 +54,24 @@ METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
 def _build_requirements(
     src_dir: str, src_file: str, distributions: Iterable[str], package_name: str
 ) -> list[InstallRequirement]:
-    builder = ProjectBuilder(src_dir, runner=pyproject_hooks.quiet_subprocess_runner)
-    # It is not clear that it should be possible to use `get_requires_for_build` with
-    # "editable" but it seems to work in practice.
     result = collections.defaultdict(set)
-    for req in builder.build_system_requires:
-        result[req].add(f"{package_name} ({src_file}::build-system.requires)")
-        # TODO: Follow PEP and install deps
-    for dist in distributions:
-        for req in builder.get_requires_for_build(dist):
-            result[req].add(
-                f"{package_name} ({src_file}::build-system.backend::{dist})"
-            )
+
+    with IsolatedEnvBuilder() as env:
+        builder = ProjectBuilder(
+            srcdir=src_dir,
+            python_executable=env.executable,
+            scripts_dir=env.scripts_dir,
+            runner=pyproject_hooks.quiet_subprocess_runner,
+        )
+        env.install(builder.build_system_requires)
+
+        for req in builder.build_system_requires:
+            result[req].add(f"{package_name} ({src_file}::build-system.requires)")
+        for dist in distributions:
+            for req in builder.get_requires_for_build(dist):
+                result[req].add(
+                    f"{package_name} ({src_file}::build-system.backend::{dist})"
+                )
 
     return [
         install_req_from_line(k, comes_from=v) for k, vs in result.items() for v in vs
