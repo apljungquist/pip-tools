@@ -7,7 +7,7 @@ import shlex
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, Any, BinaryIO, Iterable, cast
+from typing import IO, Any, BinaryIO, Iterable, Literal, cast
 
 import click
 import pyproject_hooks
@@ -45,7 +45,11 @@ DEFAULT_REQUIREMENTS_FILES = (
     "pyproject.toml",
     "setup.cfg",
 )
-ALL_BUILD_DISTRIBUTIONS = frozenset({"editable", "sdist", "wheel"})
+ALL_BUILD_DISTRIBUTIONS: tuple[Literal["sdist", "wheel", "editable"], ...] = (
+    "editable",
+    "sdist",
+    "wheel",
+)
 DEFAULT_REQUIREMENTS_FILE = "requirements.in"
 DEFAULT_REQUIREMENTS_OUTPUT_FILE = "requirements.txt"
 METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
@@ -54,6 +58,7 @@ METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
 def _build_requirements(
     src_dir: str, src_file: str, distributions: Iterable[str], package_name: str
 ) -> list[InstallRequirement]:
+    assert not isinstance(distributions, str)
     result = collections.defaultdict(set)
 
     with IsolatedEnvBuilder() as env:
@@ -376,22 +381,23 @@ def _determine_linesep(
     "--build-deps-for",
     "build_deps_for_distributions",
     multiple=True,
-    type=click.Choice(("editable", "sdist", "wheel")),
+    type=click.Choice(ALL_BUILD_DISTRIBUTIONS),
     help="Name of a distribution to install build dependencies for; may be used more than once. "
-    "Static dependencies declared in pyproject.toml will be included as well.",
+    "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
+    "well.",
 )
 @click.option(
     "--all-build-deps",
     is_flag=True,
     default=False,
-    help="Install build dependencies for all distributions."
+    help="Install build dependencies for all distributions. "
     "Static dependencies declared in pyproject.toml will be included as well.",
 )
 @click.option(
     "--build-deps-only",
     is_flag=True,
     default=False,
-    help="Install a package only if they it is a build dependency.",
+    help="Install a package only if it is a build dependency.",
 )
 def cli(
     ctx: click.Context,
@@ -434,7 +440,7 @@ def cli(
     config: Path | None,
     no_config: bool,
     constraint: tuple[str, ...],
-    build_deps_for_distributions: tuple[str, ...],
+    build_deps_for_distributions: tuple[Literal["sdist", "wheel", "editable"], ...],
     all_build_deps: bool,
     build_deps_only: bool,
 ) -> None:
@@ -444,6 +450,17 @@ def cli(
     """
     log.verbosity = verbose - quiet
 
+    if all_build_deps and build_deps_for_distributions:
+        raise click.BadParameter(
+            "--build-deps-for has no effect when used with --all-build-deps"
+        )
+    elif all_build_deps:
+        build_deps_for_distributions = ALL_BUILD_DISTRIBUTIONS
+
+    if build_deps_only and not build_deps_for_distributions:
+        raise click.BadParameter(
+            "--build-deps-only requires either --build-deps-for or --all-build-deps"
+        )
     if build_deps_only and (extras or all_extras):
         raise click.BadParameter(
             "--build-deps-only cannot be used with any of --extra, --all-extras"
@@ -584,10 +601,10 @@ def cli(
     setup_file_found = False
     for src_file in src_files:
         is_setup_file = os.path.basename(src_file) in METADATA_FILENAMES
-        if not is_setup_file and build_deps_only:
+        if not is_setup_file and build_deps_for_distributions:
             msg = (
-                "--build-deps-only makes sense only with the"
-                " setup.py, setup.cfg and pyproject.toml specs."
+                "--build-deps-for and --all-build-deps can be used only with the "
+                "setup.py, setup.cfg and pyproject.toml specs."
             )
             raise click.BadParameter(msg)
 
@@ -635,14 +652,6 @@ def cli(
                         msg = "--extra has no effect when used with --all-extras"
                         raise click.BadParameter(msg)
                     extras = tuple(metadata.get_all("Provides-Extra"))
-            if all_build_deps:
-                if build_deps_for_distributions:
-                    msg = (
-                        "--build-deps-for has no effect when used with "
-                        "--all-build-deps"
-                    )
-                    raise click.BadParameter(msg)
-                build_deps_for_distributions = tuple(ALL_BUILD_DISTRIBUTIONS)
             if build_deps_for_distributions:
                 package_name = metadata.get_all("Name")[0]
                 constraints.extend(

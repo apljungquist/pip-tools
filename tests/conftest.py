@@ -433,9 +433,7 @@ def fake_dists(tmpdir, make_package, make_wheel):
 
 @pytest.fixture
 def fake_dists_with_build_deps(fake_dists, make_package, make_wheel):
-    """
-    Generate distribution packages with names that make sense for testing build deps
-    """
+    """Generate distribution packages with names that make sense for testing build deps."""
     pkgs = [
         make_package("fake_static_build_dep", version="0.1"),
         make_package("fake_dynamic_build_dep_for_all", version="0.2"),

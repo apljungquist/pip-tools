@@ -3,7 +3,6 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import os
-import pathlib
 import shutil
 import subprocess
 import sys
@@ -2788,22 +2787,6 @@ class Dependency:
         return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r}, via={self._via})>"
 
 
-# This can be removed when support for python<3.8 is dropped
-def copytree_dirs_exist_ok(
-    src_top: str | os.PathLike[str], dst_top: str | os.PathLike[str]
-) -> None:
-    src_top = pathlib.Path(src_top)
-    dst_top = pathlib.Path(dst_top)
-
-    dst_top.mkdir(exist_ok=True)
-    for src in src_top.iterdir():
-        dst = dst_top / src.name
-        if src.is_file():
-            shutil.copy2(src, dst)
-        else:
-            shutil.copytree(src, dst)
-
-
 @pytest.mark.network
 @pytest.mark.parametrize(
     ("distributions", "other_options", "expected_deps"),
@@ -2951,7 +2934,7 @@ def test_build_distribution(
     base_cmd = ["-n", "--allow-unsafe"]
 
     with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
-        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
         out = runner.invoke(
             cli,
             base_cmd + [f"--build-deps-for={d}" for d in distributions] + other_options,
@@ -2974,7 +2957,7 @@ def test_all_build_distributions(
     base_cmd = ["-n", "--allow-unsafe"]
 
     with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
-        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
         actual_out = runner.invoke(
             cli,
             base_cmd + ["--all-build-deps"],
@@ -2982,7 +2965,7 @@ def test_all_build_distributions(
     actual_deps = _parse_deps(actual_out.stderr, [])
 
     with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
-        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
         expected_out = runner.invoke(
             cli,
             base_cmd
@@ -3026,7 +3009,7 @@ def test_only_build_distributions(
     base_cmd = ["-n", "--allow-unsafe"]
 
     with runner.isolated_filesystem(tmp_path) as tmp_pkg_path:
-        copytree_dirs_exist_ok(src_pkg_path, tmp_pkg_path)
+        shutil.copytree(src_pkg_path, tmp_pkg_path, dirs_exist_ok=True)
         actual_out = runner.invoke(
             cli,
             base_cmd + ["--all-build-deps", "--build-deps-only"],
@@ -3062,13 +3045,27 @@ def test_all_build_distributions_fail_with_build_distribution(
             meta_path,
         ],
     )
-    assert out.exit_code == 2
     exp = "--build-deps-for has no effect when used with --all-build-deps"
+    assert out.exit_code == 2
     assert exp in out.stderr
 
 
-@pytest.mark.parametrize(("option"), ("--all-extras", "--extra=foo"))
-def test_all_build_distributions_fail_non_build_distribution_options(runner, option):
+def test_build_deps_only_fails_without_any_build_deps(runner):
+    """
+    Test that passing ``--build-deps-only`` fails when it is not specified how build deps should
+    be gathered.
+    """
+    out = runner.invoke(
+        cli,
+        ["--build-deps-only"],
+    )
+    exp = "--build-deps-only requires either --build-deps-for or --all-build-deps"
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
+@pytest.mark.parametrize("option", ("--all-extras", "--extra=foo"))
+def test_build_deps_only_fails_with_conflicting_options(runner, option):
     """
     Test that passing ``--all-build-deps`` and conflicting option fails.
     """
@@ -3080,8 +3077,26 @@ def test_all_build_distributions_fail_non_build_distribution_options(runner, opt
             option,
         ],
     )
-    assert out.exit_code == 2
     exp = "--build-deps-only cannot be used with any of --extra, --all-extras"
+    assert out.exit_code == 2
+    assert exp in out.stderr
+
+
+@pytest.mark.parametrize("option", ("--all-build-deps", "--build-deps-for=wheel"))
+def test_build_deps_fail_without_setup_file(runner, tmpdir, option):
+    """
+    Test that passing ``--build-deps-for`` or ``--all-build-deps`` fails when used with a
+    requirements file as opposed to a setup file.
+    """
+    path = os.path.join(tmpdir, "requirements.in")
+    with open(path, "w") as stream:
+        stream.write("\n")
+    out = runner.invoke(cli, ["-n", option, path])
+    exp = (
+        "--build-deps-for and --all-build-deps can be used only with the "
+        "setup.py, setup.cfg and pyproject.toml specs."
+    )
+    assert out.exit_code == 2
     assert exp in out.stderr
 
 
