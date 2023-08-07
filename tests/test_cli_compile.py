@@ -2787,6 +2787,17 @@ class Dependency:
         return f"<{self.__class__.__name__}@{id(self)}(_pat={self._pat!r}, via={self._via})>"
 
 
+def test_comparing_dependency_to_unexpected_type_returns_false():
+    assert Dependency("1.0", ("some_package",)) != object()
+
+
+def test_dependency_repr_looks_reasonable():
+    assert fnmatch.fnmatch(
+        repr(Dependency("1.0", ("some_package",))),
+        "<Dependency@*(_pat='1.0', via={'some_package'})>",
+    )
+
+
 @pytest.mark.network
 @pytest.mark.parametrize(
     ("distributions", "other_options", "expected_deps"),
