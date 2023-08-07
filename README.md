@@ -603,7 +603,7 @@ tomli==2.0.1
     #   pytest
 ```
 
-Some build backends may also request build dependencies dynamically using the `get_requires_for_build_` hooks described in [PEP 517][pep-517] and [PEP 660][pep-660].
+Some build backends may also request build dependencies dynamically using the `get_requires_for_build_` hooks described in [PEP 517] and [PEP 660].
 This will be indicated in the output with one of the following suffixes:
 
 - `(pyproject.toml::build-system.backend::editable)`
@@ -679,7 +679,7 @@ versions as the required `pip` versions.
 [Matrix Space]: https://matrix.to/#/%23jazzband:matrix.org
 [pip-tools-overview]: https://github.com/jazzband/pip-tools/raw/main/img/pip-tools-overview.svg
 [environment-markers]: https://peps.python.org/pep-0508/#environment-markers
-[pep-517]: https://peps.python.org/pep-0517/
-[pep-660]: https://peps.python.org/pep-0660/
+[PEP 517]: https://peps.python.org/pep-0517/
+[PEP 660]: https://peps.python.org/pep-0660/
 [discord-chat]: https://discord.gg/pypa
 [discord-chat-image]: https://img.shields.io/discord/803025117553754132?label=Discord%20chat%20%23pip-tools&style=flat-square
