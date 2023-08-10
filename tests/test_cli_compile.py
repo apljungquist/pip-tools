@@ -1722,13 +1722,13 @@ def test_parse_requirements_build_isolation_option(
     ("option", "expected"),
     (("--build-isolation", True), ("--no-build-isolation", False)),
 )
-@mock.patch("piptools.scripts.compile.project_wheel_metadata")
+@mock.patch("piptools.scripts.compile.build_project_metadata")
 def test_project_wheel_metadata_isolation_option(
     project_wheel_metadata, runner, option, expected
 ):
     """
     A value of the --build-isolation/--no-build-isolation flag
-    must be passed to project_wheel_metadata().
+    must be passed to build_project_metadata().
     """
 
     with open("setup.py", "w") as package:
@@ -1743,7 +1743,7 @@ def test_project_wheel_metadata_isolation_option(
 
     runner.invoke(cli, [option])
 
-    # Ensure the options in project_wheel_metadata has the isolated kwarg
+    # Ensure the options in build_project_metadata has the isolated kwarg
     _, kwargs = project_wheel_metadata.call_args
     assert kwargs["isolated"] is expected
 

@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import collections
 import itertools
 import os
 import shlex
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, Any, BinaryIO, Iterable, Literal, cast
+from typing import IO, Any, BinaryIO, Literal, cast
 
 import click
-import pyproject_hooks
-from build import BuildBackendException, ProjectBuilder
-from build.env import IsolatedEnvBuilder
-from build.util import project_wheel_metadata
+from build import BuildBackendException
 from click.utils import LazyFile, safecall
 from pip._internal.commands import create_command
 from pip._internal.req import InstallRequirement
@@ -21,6 +17,7 @@ from pip._internal.req.constructors import install_req_from_line
 from pip._internal.utils.misc import redact_auth_from_url
 
 from .._compat import parse_requirements
+from ..build import build_project_metadata
 from ..cache import DependencyCache
 from ..exceptions import NoCandidateFound, PipToolsError
 from ..locations import CACHE_DIR, CONFIG_FILE_NAME
@@ -35,7 +32,6 @@ from ..utils import (
     is_pinned_requirement,
     key_from_ireq,
     override_defaults_from_config_file,
-    parse_requirements_from_wheel_metadata,
 )
 from ..writer import OutputWriter
 
@@ -53,34 +49,6 @@ ALL_BUILD_DISTRIBUTIONS: tuple[Literal["sdist", "wheel", "editable"], ...] = (
 DEFAULT_REQUIREMENTS_FILE = "requirements.in"
 DEFAULT_REQUIREMENTS_OUTPUT_FILE = "requirements.txt"
 METADATA_FILENAMES = frozenset({"setup.py", "setup.cfg", "pyproject.toml"})
-
-
-def _build_requirements(
-    src_dir: str, src_file: str, distributions: Iterable[str], package_name: str
-) -> list[InstallRequirement]:
-    assert not isinstance(distributions, str)
-    result = collections.defaultdict(set)
-
-    with IsolatedEnvBuilder() as env:
-        builder = ProjectBuilder(
-            srcdir=src_dir,
-            python_executable=env.executable,
-            scripts_dir=env.scripts_dir,
-            runner=pyproject_hooks.quiet_subprocess_runner,
-        )
-        env.install(builder.build_system_requires)
-
-        for req in builder.build_system_requires:
-            result[req].add(f"{package_name} ({src_file}::build-system.requires)")
-        for dist in distributions:
-            for req in builder.get_requires_for_build(dist):
-                result[req].add(
-                    f"{package_name} ({src_file}::build-system.backend::{dist})"
-                )
-
-    return [
-        install_req_from_line(k, comes_from=v) for k, vs in result.items() for v in vs
-    ]
 
 
 def _get_default_option(option_name: str) -> Any:
@@ -630,10 +598,10 @@ def cli(
             constraints.extend(reqs)
         elif is_setup_file:
             setup_file_found = True
-            src_dir = os.path.dirname(os.path.abspath(src_file))
             try:
-                metadata = project_wheel_metadata(
-                    src_dir,
+                metadata = build_project_metadata(
+                    src_file=src_file,
+                    build_distributions=build_deps_for_distributions,
                     isolated=build_isolation,
                 )
             except BuildBackendException as e:
@@ -642,29 +610,14 @@ def cli(
                 sys.exit(2)
 
             if not build_deps_only:
-                constraints.extend(
-                    parse_requirements_from_wheel_metadata(
-                        metadata=metadata, src_file=src_file
-                    )
-                )
+                constraints.extend(metadata.requirements)
                 if all_extras:
                     if extras:
                         msg = "--extra has no effect when used with --all-extras"
                         raise click.BadParameter(msg)
-                    extras = tuple(metadata.get_all("Provides-Extra"))
+                    extras = metadata.extras
             if build_deps_for_distributions:
-                package_name = metadata.get_all("Name")[0]
-                constraints.extend(
-                    _build_requirements(
-                        # Build requirements will only be present if a pyproject.toml file exists,
-                        # but if there is also a setup.py file then only that will be explicitly
-                        # processed due to the order of `DEFAULT_REQUIREMENTS_FILES`.
-                        src_dir,
-                        "pyproject.toml",
-                        build_deps_for_distributions,
-                        package_name,
-                    )
-                )
+                constraints.extend(metadata.build_requirements)
         else:
             constraints.extend(
                 parse_requirements(
