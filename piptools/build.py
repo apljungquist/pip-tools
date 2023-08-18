@@ -6,6 +6,7 @@ import os
 import pathlib
 import tempfile
 from dataclasses import dataclass
+from email.message import Message
 from importlib import metadata as importlib_metadata
 from typing import Iterator
 
@@ -59,7 +60,7 @@ def build_project_metadata(
                 builder=builder,
                 src_file=src_file,
                 distributions=build_distributions,
-                package_name=metadata.get_all("Name")[0],
+                package_name=_get_name(metadata),
             )
         )
         return ProjectMetadata(
@@ -92,16 +93,20 @@ def _create_project_builder(
 
 def _build_project_wheel_metadata(
     builder: build.ProjectBuilder,
-) -> importlib_metadata.PackageMetadata:
+) -> Message:
     with tempfile.TemporaryDirectory() as tmpdir:
         path = pathlib.Path(builder.metadata_path(tmpdir))
         return importlib_metadata.PathDistribution(path).metadata
 
 
+def _get_name(metadata: Message) -> str:
+    return metadata.get_all("Name")[0]  # type: ignore
+
+
 def _prepare_requirements(
-    metadata: importlib_metadata.PackageMetadata, src_file: str
+    metadata: Message, src_file: str
 ) -> Iterator[InstallRequirement]:
-    package_name = metadata.get_all("Name")[0]
+    package_name = _get_name(metadata)
     comes_from = f"{package_name} ({src_file})"
 
     for req in metadata.get_all("Requires-Dist") or []:
