@@ -29,7 +29,9 @@ class ProjectMetadata:
 def build_project_metadata(
     src_file: str,
     build_distributions: tuple[str, ...],
-    isolated: bool = True,
+    *,
+    isolated: bool,
+    quiet: bool,
 ) -> ProjectMetadata:
     """
     Return the metadata for a project.
@@ -46,10 +48,11 @@ def build_project_metadata(
     :param isolated: Whether to run invoke the backend in the current
                      environment or to create an isolated one and invoke it
                      there.
+    :param quiet: Whether to suppress the output of subprocesses.
     """
 
     src_dir = os.path.dirname(os.path.abspath(src_file))
-    with _create_project_builder(src_dir, isolated) as builder:
+    with _create_project_builder(src_dir, isolated=isolated, quiet=quiet) as builder:
         metadata = _build_project_wheel_metadata(builder)
         extras = tuple(metadata.get_all("Provides-Extra") or ())
         requirements = tuple(
@@ -58,7 +61,6 @@ def build_project_metadata(
         build_requirements = tuple(
             _prepare_build_requirements(
                 builder=builder,
-                src_file=src_file,
                 distributions=build_distributions,
                 package_name=_get_name(metadata),
             )
@@ -72,11 +74,13 @@ def build_project_metadata(
 
 @contextlib.contextmanager
 def _create_project_builder(
-    src_dir: str, isolated: bool = False
+    src_dir: str, *, isolated: bool, quiet: bool
 ) -> Iterator[build.ProjectBuilder]:
     builder = build.ProjectBuilder(
         os.fspath(src_dir),
-        runner=pyproject_hooks.default_subprocess_runner,
+        runner=pyproject_hooks.quiet_subprocess_runner
+        if quiet
+        else pyproject_hooks.default_subprocess_runner,
     )
 
     if not isolated:
@@ -107,7 +111,8 @@ def _prepare_requirements(
     metadata: Message, src_file: str
 ) -> Iterator[InstallRequirement]:
     package_name = _get_name(metadata)
-    comes_from = f"{package_name} ({src_file})"
+    src_name = os.path.basename(src_file)
+    comes_from = f"{package_name} ({src_name})"
 
     for req in metadata.get_all("Requires-Dist") or []:
         parts = parse_req_from_line(req, comes_from)
@@ -131,25 +136,22 @@ def _prepare_requirements(
 
 def _prepare_build_requirements(
     builder: build.ProjectBuilder,
-    src_file: str,
     distributions: tuple[str, ...],
     package_name: str,
 ) -> Iterator[InstallRequirement]:
     result = collections.defaultdict(set)
-    src_path = pathlib.Path(src_file)
 
     # Build requirements will only be present if a pyproject.toml file exists,
     # but if there is also a setup.py file then only that will be explicitly
     # processed due to the order of `DEFAULT_REQUIREMENTS_FILES`.
-    if src_path.name != PYPROJECT_TOML:
-        src_path = src_path.parent / PYPROJECT_TOML
+    src_name = PYPROJECT_TOML
 
     for req in builder.build_system_requires:
-        result[req].add(f"{package_name} ({src_path}::build-system.requires)")
+        result[req].add(f"{package_name} ({src_name}::build-system.requires)")
     for dist in distributions:
         for req in builder.get_requires_for_build(dist):
             result[req].add(
-                f"{package_name} ({src_path}::build-system.backend::{dist})"
+                f"{package_name} ({src_name}::build-system.backend::{dist})"
             )
 
     for req, comes_from_sources in result.items():
