@@ -61,6 +61,7 @@ def build_project_metadata(
         build_requirements = tuple(
             _prepare_build_requirements(
                 builder=builder,
+                src_file=src_file,
                 distributions=build_distributions,
                 package_name=_get_name(metadata),
             )
@@ -111,8 +112,7 @@ def _prepare_requirements(
     metadata: Message, src_file: str
 ) -> Iterator[InstallRequirement]:
     package_name = _get_name(metadata)
-    src_name = os.path.basename(src_file)
-    comes_from = f"{package_name} ({src_name})"
+    comes_from = f"{package_name} ({src_file})"
 
     for req in metadata.get_all("Requires-Dist") or []:
         parts = parse_req_from_line(req, comes_from)
@@ -136,6 +136,7 @@ def _prepare_requirements(
 
 def _prepare_build_requirements(
     builder: build.ProjectBuilder,
+    src_file: str,
     distributions: tuple[str, ...],
     package_name: str,
 ) -> Iterator[InstallRequirement]:
@@ -144,14 +145,14 @@ def _prepare_build_requirements(
     # Build requirements will only be present if a pyproject.toml file exists,
     # but if there is also a setup.py file then only that will be explicitly
     # processed due to the order of `DEFAULT_REQUIREMENTS_FILES`.
-    src_name = PYPROJECT_TOML
+    src_file = os.path.join(os.path.dirname(src_file), PYPROJECT_TOML)
 
     for req in builder.build_system_requires:
-        result[req].add(f"{package_name} ({src_name}::build-system.requires)")
+        result[req].add(f"{package_name} ({src_file}::build-system.requires)")
     for dist in distributions:
         for req in builder.get_requires_for_build(dist):
             result[req].add(
-                f"{package_name} ({src_name}::build-system.backend::{dist})"
+                f"{package_name} ({src_file}::build-system.backend::{dist})"
             )
 
     for req, comes_from_sources in result.items():

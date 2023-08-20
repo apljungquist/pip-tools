@@ -2767,37 +2767,35 @@ def test_all_extras_and_all_build_deps(
             ],
         )
 
-    assert (out.exit_code, out.stdout) == (
-        0,
-        dedent(
-            """\
-            fake-dynamic-build-dep-for-all==0.2
-                # via
-                #   small-fake-with-build-deps (pyproject.toml::build-system.backend::editable)
-                #   small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)
-                #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
-            fake-dynamic-build-dep-for-editable==0.5
-                # via small-fake-with-build-deps (pyproject.toml::build-system.backend::editable)
-            fake-dynamic-build-dep-for-sdist==0.3
-                # via small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)
-            fake-dynamic-build-dep-for-wheel==0.4
-                # via small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
-            fake-static-build-dep==0.1
-                # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
-            small-fake-a==0.1
-                # via small-fake-with-build-deps (setup.py)
-            small-fake-b==0.2
-                # via small-fake-with-build-deps (setup.py)
-            wheel==0.41.1
-                # via
-                #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
-                #   small-fake-with-build-deps (pyproject.toml::build-system.requires)
+    assert out.exit_code == 0
+    assert out.stdout == dedent(
+        """\
+        fake-dynamic-build-dep-for-all==0.2
+            # via
+            #   small-fake-with-build-deps (pyproject.toml::build-system.backend::editable)
+            #   small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)
+            #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
+        fake-dynamic-build-dep-for-editable==0.5
+            # via small-fake-with-build-deps (pyproject.toml::build-system.backend::editable)
+        fake-dynamic-build-dep-for-sdist==0.3
+            # via small-fake-with-build-deps (pyproject.toml::build-system.backend::sdist)
+        fake-dynamic-build-dep-for-wheel==0.4
+            # via small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
+        fake-static-build-dep==0.1
+            # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
+        small-fake-a==0.1
+            # via small-fake-with-build-deps (setup.py)
+        small-fake-b==0.2
+            # via small-fake-with-build-deps (setup.py)
+        wheel==0.41.1
+            # via
+            #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
+            #   small-fake-with-build-deps (pyproject.toml::build-system.requires)
 
-            # The following packages are considered to be unsafe in a requirements file:
-            setuptools==68.1.2
-                # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
-            """
-        ),
+        # The following packages are considered to be unsafe in a requirements file:
+        setuptools==68.1.2
+            # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
+        """
     )
 
 
@@ -2831,7 +2829,7 @@ def test_all_build_distributions(runner, tmp_path, monkeypatch):
 @backtracking_resolver_only
 def test_only_build_distributions(runner, tmp_path, monkeypatch):
     """
-    Test that ``--build-deps-only`` excludes dependencies other than build dependencies.
+    Test that ``--only-build-deps`` excludes dependencies other than build dependencies.
     """
     _mock_build_project_metadata(monkeypatch)
     cls = _mock_resolver_cls(monkeypatch)
@@ -2843,7 +2841,7 @@ def test_only_build_distributions(runner, tmp_path, monkeypatch):
         cli,
         [
             "--all-build-deps",
-            "--build-deps-only",
+            "--only-build-deps",
             os.fspath(src_file),
         ],
     )
@@ -2870,23 +2868,23 @@ def test_all_build_distributions_fail_with_build_distribution(runner):
 
 
 @backtracking_resolver_only
-def test_build_deps_only_fails_without_any_build_deps(runner):
+def test_only_build_deps_fails_without_any_build_deps(runner):
     """
-    Test that passing ``--build-deps-only`` fails when it is not specified how build deps should
+    Test that passing ``--only-build-deps`` fails when it is not specified how build deps should
     be gathered.
     """
     out = runner.invoke(
         cli,
-        ["--build-deps-only"],
+        ["--only-build-deps"],
     )
-    exp = "--build-deps-only requires either --build-deps-for or --all-build-deps"
+    exp = "--only-build-deps requires either --build-deps-for or --all-build-deps"
     assert out.exit_code == 2
     assert exp in out.stderr
 
 
 @backtracking_resolver_only
 @pytest.mark.parametrize("option", ("--all-extras", "--extra=foo"))
-def test_build_deps_only_fails_with_conflicting_options(runner, option):
+def test_only_build_deps_fails_with_conflicting_options(runner, option):
     """
     Test that passing ``--all-build-deps`` and conflicting option fails.
     """
@@ -2894,11 +2892,11 @@ def test_build_deps_only_fails_with_conflicting_options(runner, option):
         cli,
         [
             "--all-build-deps",
-            "--build-deps-only",
+            "--only-build-deps",
             option,
         ],
     )
-    exp = "--build-deps-only cannot be used with any of --extra, --all-extras"
+    exp = "--only-build-deps cannot be used with any of --extra, --all-extras"
     assert out.exit_code == 2
     assert exp in out.stderr
 

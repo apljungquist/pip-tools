@@ -27,7 +27,8 @@ def test_build_project_metadata_resolved_correct_build_dependencies(
     metadata = build_project_metadata(
         os.fspath(src_file), ("editable",), isolated=True, quiet=False
     )
-    assert sorted(r.name for r in metadata.build_requirements) == [
+    build_requirements = sorted(r.name for r in metadata.build_requirements)
+    assert build_requirements == [
         "fake_dynamic_build_dep_for_all",
         "fake_dynamic_build_dep_for_editable",
         "fake_static_build_dep",

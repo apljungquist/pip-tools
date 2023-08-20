@@ -26,7 +26,6 @@ from ..resolver import BacktrackingResolver, LegacyResolver
 from ..utils import dedup, drop_extras, is_pinned_requirement, key_from_ireq
 from ..writer import OutputWriter
 from . import options
-from .options import ALL_BUILD_DISTRIBUTIONS
 
 DEFAULT_REQUIREMENTS_FILES = (
     "requirements.in",
@@ -112,7 +111,7 @@ def _determine_linesep(
 @options.constraint
 @options.build_deps_for
 @options.all_build_deps
-@options.build_deps_only
+@options.only_build_deps
 def cli(
     ctx: click.Context,
     verbose: int,
@@ -156,7 +155,7 @@ def cli(
     constraint: tuple[str, ...],
     build_deps_for_distributions: tuple[Literal["sdist", "wheel", "editable"], ...],
     all_build_deps: bool,
-    build_deps_only: bool,
+    only_build_deps: bool,
 ) -> None:
     """
     Compiles requirements.txt from requirements.in, pyproject.toml, setup.cfg,
@@ -169,15 +168,15 @@ def cli(
             "--build-deps-for has no effect when used with --all-build-deps"
         )
     elif all_build_deps:
-        build_deps_for_distributions = ALL_BUILD_DISTRIBUTIONS
+        build_deps_for_distributions = options.ALL_BUILD_DISTRIBUTIONS
 
-    if build_deps_only and not build_deps_for_distributions:
+    if only_build_deps and not build_deps_for_distributions:
         raise click.BadParameter(
-            "--build-deps-only requires either --build-deps-for or --all-build-deps"
+            "--only-build-deps requires either --build-deps-for or --all-build-deps"
         )
-    if build_deps_only and (extras or all_extras):
+    if only_build_deps and (extras or all_extras):
         raise click.BadParameter(
-            "--build-deps-only cannot be used with any of --extra, --all-extras"
+            "--only-build-deps cannot be used with any of --extra, --all-extras"
         )
 
     if len(src_files) == 0:
@@ -356,7 +355,7 @@ def cli(
                 log.error(f"Failed to parse {os.path.abspath(src_file)}")
                 sys.exit(2)
 
-            if not build_deps_only:
+            if not only_build_deps:
                 constraints.extend(metadata.requirements)
                 if all_extras:
                     if extras:

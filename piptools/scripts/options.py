@@ -376,9 +376,9 @@ build_deps_for = click.option(
     "build_deps_for_distributions",
     multiple=True,
     type=click.Choice(ALL_BUILD_DISTRIBUTIONS),
-    help="Name of a distribution to install build dependencies for; may be used more than once. "
+    help="Name of a distribution to install build dependencies for. "
     "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
-    "well.",
+    "well; may be used more than once.",
 )
 
 all_build_deps = click.option(
@@ -389,8 +389,8 @@ all_build_deps = click.option(
     "Static dependencies declared in pyproject.toml will be included as well.",
 )
 
-build_deps_only = click.option(
-    "--build-deps-only",
+only_build_deps = click.option(
+    "--only-build-deps",
     is_flag=True,
     default=False,
     help="Install a package only if it is a build dependency.",
