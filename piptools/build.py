@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from email.message import Message
 from importlib import metadata as importlib_metadata
-from typing import Iterator
+from typing import Any, Iterator
 
 import build
 import build.env
@@ -97,7 +97,7 @@ def _create_project_builder(
 
 def _build_project_wheel_metadata(
     builder: build.ProjectBuilder,
-) -> Message:
+) -> Any:
     with tempfile.TemporaryDirectory() as tmpdir:
         path = pathlib.Path(builder.metadata_path(tmpdir))
         return importlib_metadata.PathDistribution(path).metadata
