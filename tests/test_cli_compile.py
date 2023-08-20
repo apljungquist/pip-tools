@@ -3112,7 +3112,6 @@ def test_pass_pip_cache_to_pip_args(tmpdir, runner, current_resolver):
     assert os.listdir(os.path.join(str(cache_dir), "http"))
 
 
-@pytest.mark.xfail
 @backtracking_resolver_only
 def test_compile_recursive_extras(runner, tmp_path, current_resolver):
     (tmp_path / "pyproject.toml").write_text(
