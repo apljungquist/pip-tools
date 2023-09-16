@@ -9,7 +9,8 @@ from pip._internal.utils.misc import redact_auth_from_url
 from piptools.locations import CACHE_DIR, DEFAULT_CONFIG_FILE_NAMES
 from piptools.utils import UNSAFE_PACKAGES, override_defaults_from_config_file
 
-ALL_BUILD_DISTRIBUTIONS: tuple[Literal["sdist", "wheel", "editable"], ...] = (
+BuildDistributionT = Literal["sdist", "wheel", "editable"]
+ALL_BUILD_DISTRIBUTIONS: tuple[BuildDistributionT, ...] = (
     "editable",
     "sdist",
     "wheel",

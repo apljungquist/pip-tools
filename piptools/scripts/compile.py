@@ -6,7 +6,7 @@ import shlex
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, Any, BinaryIO, Literal, cast
+from typing import IO, Any, BinaryIO, cast
 
 import click
 from build import BuildBackendException
@@ -26,6 +26,7 @@ from ..resolver import BacktrackingResolver, LegacyResolver
 from ..utils import dedup, drop_extras, is_pinned_requirement, key_from_ireq
 from ..writer import OutputWriter
 from . import options
+from .options import BuildDistributionT
 
 DEFAULT_REQUIREMENTS_FILES = (
     "requirements.in",
@@ -153,7 +154,7 @@ def cli(
     config: Path | None,
     no_config: bool,
     constraint: tuple[str, ...],
-    build_deps_for_distributions: tuple[Literal["sdist", "wheel", "editable"], ...],
+    build_deps_for_distributions: tuple[BuildDistributionT, ...],
     all_build_deps: bool,
     only_build_deps: bool,
 ) -> None:
