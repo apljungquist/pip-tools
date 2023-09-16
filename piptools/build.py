@@ -4,11 +4,11 @@ import collections
 import contextlib
 import os
 import pathlib
+import sys
 import tempfile
 from dataclasses import dataclass
-from email.message import Message
 from importlib import metadata as importlib_metadata
-from typing import Any, Iterator
+from typing import Any, Iterator, Protocol, TypeVar, overload
 
 import build
 import build.env
@@ -17,6 +17,35 @@ from pip._internal.req import InstallRequirement
 from pip._internal.req.constructors import install_req_from_line, parse_req_from_line
 
 PYPROJECT_TOML = "pyproject.toml"
+
+_T = TypeVar("_T")
+
+
+if sys.version_info >= (3, 10):
+    from importlib.metadata import PackageMetadata
+else:
+
+    class PackageMetadata(Protocol):
+        # These are never used by us, so they can be omitted
+        # def __len__(self) -> int: ...
+        # def __contains__(self, item: str) -> bool: ...
+        # def __getitem__(self, key: str) -> str: ...
+        # def __iter__(self) -> Iterator[str]: ...
+
+        # This conflicts with the type hints for Message and must be replaced
+        # def get_all(self, name: str, failobj: _T = ...) -> list[Any] | _T: ...
+
+        @overload
+        def get_all(self, name: str, failobj: None = None) -> list[Any] | None:
+            ...
+
+        @overload
+        def get_all(self, name: str, failobj: _T) -> list[Any] | _T:
+            ...
+
+        # Message does not implement this so it must be removed
+        # @property
+        # def json(self) -> dict[str, str | list[str]]: ...
 
 
 @dataclass
@@ -98,18 +127,18 @@ def _create_project_builder(
 
 def _build_project_wheel_metadata(
     builder: build.ProjectBuilder,
-) -> Any:
+) -> PackageMetadata:
     with tempfile.TemporaryDirectory() as tmpdir:
         path = pathlib.Path(builder.metadata_path(tmpdir))
         return importlib_metadata.PathDistribution(path).metadata
 
 
-def _get_name(metadata: Message) -> str:
+def _get_name(metadata: PackageMetadata) -> str:
     return metadata.get_all("Name")[0]  # type: ignore
 
 
 def _prepare_requirements(
-    metadata: Message, src_file: str
+    metadata: PackageMetadata, src_file: str
 ) -> Iterator[InstallRequirement]:
     package_name = _get_name(metadata)
     comes_from = f"{package_name} ({src_file})"
