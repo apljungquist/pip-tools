@@ -26,15 +26,6 @@ if sys.version_info >= (3, 10):
 else:
 
     class PackageMetadata(Protocol):
-        # These are never used by us, so they can be omitted
-        # def __len__(self) -> int: ...
-        # def __contains__(self, item: str) -> bool: ...
-        # def __getitem__(self, key: str) -> str: ...
-        # def __iter__(self) -> Iterator[str]: ...
-
-        # This conflicts with the type hints for Message and must be replaced
-        # def get_all(self, name: str, failobj: _T = ...) -> list[Any] | _T: ...
-
         @overload
         def get_all(self, name: str, failobj: None = None) -> list[Any] | None:
             ...
@@ -42,10 +33,6 @@ else:
         @overload
         def get_all(self, name: str, failobj: _T) -> list[Any] | _T:
             ...
-
-        # Message does not implement this so it must be removed
-        # @property
-        # def json(self) -> dict[str, str | list[str]]: ...
 
 
 @dataclass
