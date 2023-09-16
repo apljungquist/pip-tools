@@ -348,7 +348,7 @@ def cli(
                     src_file=src_file,
                     build_distributions=build_deps_for_distributions,
                     isolated=build_isolation,
-                    quiet=log.verbosity < 0,
+                    quiet=log.verbosity <= 0,
                 )
             except BuildBackendException as e:
                 log.error(str(e))
