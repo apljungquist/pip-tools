@@ -2767,9 +2767,15 @@ def test_all_extras_and_all_build_deps(
             ],
         )
 
+    # Note that the build dependencies of our build dependencies are not resolved.
+    # This means that if our build dependencies are not available as wheels then we will not get reproducible results.
     assert out.exit_code == 0
     assert out.stdout == dedent(
         """\
+        fake-direct-extra-runtime-dep==0.2
+            # via small-fake-with-build-deps (setup.py)
+        fake-direct-runtime-dep==0.1
+            # via small-fake-with-build-deps (setup.py)
         fake-dynamic-build-dep-for-all==0.2
             # via
             #   small-fake-with-build-deps (pyproject.toml::build-system.backend::editable)
@@ -2783,15 +2789,13 @@ def test_all_extras_and_all_build_deps(
             # via small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
         fake-static-build-dep==0.1
             # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
-        small-fake-a==0.1
-            # via small-fake-with-build-deps (setup.py)
-        small-fake-b==0.2
-            # via small-fake-with-build-deps (setup.py)
+        fake-transient-run-dep==0.3
+            # via fake-static-build-dep
         wheel==0.41.1
             # via
             #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
             #   small-fake-with-build-deps (pyproject.toml::build-system.requires)
-
+        
         # The following packages are considered to be unsafe in a requirements file:
         setuptools==68.1.2
             # via small-fake-with-build-deps (pyproject.toml::build-system.requires)

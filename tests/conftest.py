@@ -292,7 +292,13 @@ def make_package(tmp_path_factory):
     Make a package from a given name, version and list of required packages.
     """
 
-    def _make_package(name, version="0.1", install_requires=None, extras_require=None):
+    def _make_package(
+        name,
+        version="0.1",
+        install_requires=None,
+        extras_require=None,
+        build_system_requires=None,
+    ):
         if install_requires is None:
             install_requires = []
 
@@ -330,6 +336,17 @@ def make_package(tmp_path_factory):
 
         # Create a module to make the package importable.
         (package_dir / name).with_suffix(".py").touch()
+
+        if build_system_requires:
+            with (package_dir / "pyproject.toml").open("w") as fp:
+                fp.write(
+                    dedent(
+                        f"""\
+                        [build-system]
+                        requires = {json.dumps(build_system_requires)}
+                        """
+                    )
+                )
 
         return package_dir
 
@@ -433,13 +450,20 @@ def fake_dists_with_build_deps(tmp_path_factory, make_package, make_wheel):
     """Generate distribution packages with names that make sense for testing build deps."""
     dists_path = tmp_path_factory.mktemp("dists")
     pkgs = [
-        make_package("fake_static_build_dep", version="0.1"),
+        make_package(
+            "fake_static_build_dep",
+            version="0.1",
+            install_requires=["fake_transient_run_dep"],
+            build_system_requires=["fake_transient_build_dep"],
+        ),
         make_package("fake_dynamic_build_dep_for_all", version="0.2"),
         make_package("fake_dynamic_build_dep_for_sdist", version="0.3"),
         make_package("fake_dynamic_build_dep_for_wheel", version="0.4"),
         make_package("fake_dynamic_build_dep_for_editable", version="0.5"),
-        make_package("small-fake-a", version="0.1"),
-        make_package("small-fake-b", version="0.2"),
+        make_package("fake_direct_runtime_dep", version="0.1"),
+        make_package("fake_direct_extra_runtime_dep", version="0.2"),
+        make_package("fake_transient_build_dep", version="0.3"),
+        make_package("fake_transient_run_dep", version="0.3"),
     ]
     for pkg in pkgs:
         make_wheel(pkg, dists_path)
