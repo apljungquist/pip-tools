@@ -2769,7 +2769,8 @@ def test_all_extras_and_all_build_deps(
 
     assert out.exit_code == 0
     # Note that the build dependencies of our build dependencies are not resolved.
-    # This means that if our build dependencies are not available as wheels then we will not get reproducible results.
+    # This means that if our build dependencies are not available as wheels then we will not get
+    # reproducible results.
     assert "fake_transient_build_dep" not in out.stdout
     assert out.stdout == dedent(
         """\
@@ -2796,7 +2797,7 @@ def test_all_extras_and_all_build_deps(
             # via
             #   small-fake-with-build-deps (pyproject.toml::build-system.backend::wheel)
             #   small-fake-with-build-deps (pyproject.toml::build-system.requires)
-        
+
         # The following packages are considered to be unsafe in a requirements file:
         setuptools==68.1.2
             # via small-fake-with-build-deps (pyproject.toml::build-system.requires)
