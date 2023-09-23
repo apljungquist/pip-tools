@@ -2767,9 +2767,10 @@ def test_all_extras_and_all_build_deps(
             ],
         )
 
+    assert out.exit_code == 0
     # Note that the build dependencies of our build dependencies are not resolved.
     # This means that if our build dependencies are not available as wheels then we will not get reproducible results.
-    assert out.exit_code == 0
+    assert "fake_transient_build_dep" not in out.stdout
     assert out.stdout == dedent(
         """\
         fake-direct-extra-runtime-dep==0.2

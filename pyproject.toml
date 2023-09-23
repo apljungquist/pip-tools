@@ -36,7 +36,7 @@ classifiers = [
 keywords = ["pip", "requirements", "packaging"]
 dependencies = [
   # direct dependencies
-  "build",
+  "build > 1",
   "click >= 8",
   "pip >= 22.2",
   "pyproject_hooks",

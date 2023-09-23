@@ -93,20 +93,19 @@ def build_project_metadata(
 def _create_project_builder(
     src_dir: str, *, isolated: bool, quiet: bool
 ) -> Iterator[build.ProjectBuilder]:
-    builder = build.ProjectBuilder(
-        os.fspath(src_dir),
-        runner=pyproject_hooks.quiet_subprocess_runner
-        if quiet
-        else pyproject_hooks.default_subprocess_runner,
-    )
+    if quiet:
+        runner = pyproject_hooks.quiet_subprocess_runner
+    else:
+        runner = pyproject_hooks.default_subprocess_runner
+
+    source_dir = os.fspath(src_dir)
 
     if not isolated:
-        yield builder
+        yield build.ProjectBuilder(source_dir, runner=runner)
         return
 
-    with build.env.IsolatedEnvBuilder() as env:
-        builder.python_executable = env.executable
-        builder.scripts_dir = env.scripts_dir
+    with build.env.DefaultIsolatedEnv() as env:
+        builder = build.ProjectBuilder.from_isolated_env(env, source_dir, runner)
         env.install(builder.build_system_requires)
         env.install(builder.get_requires_for_build("wheel"))
         yield builder
