@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -2747,7 +2748,7 @@ def test_all_extras_and_all_build_deps(
     """
     Test that trying to lock all dependencies gives the expected output.
     """
-    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    src_pkg_path = pathlib.Path(PACKAGES_PATH) / "small_fake_with_build_deps"
     # When used as argument to the runner it is not passed to pip
     monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
 
@@ -2914,10 +2915,9 @@ def test_build_deps_fail_without_setup_file(runner, tmpdir, option):
     Test that passing ``--build-deps-for`` or ``--all-build-deps`` fails when used with a
     requirements file as opposed to a setup file.
     """
-    path = os.path.join(tmpdir, "requirements.in")
-    with open(path, "w") as stream:
-        stream.write("\n")
-    out = runner.invoke(cli, ["-n", option, path])
+    path = pathlib.Path(tmpdir) / "requirements.in"
+    path.write_text("\n")
+    out = runner.invoke(cli, ["-n", option, os.fspath(path)])
     exp = (
         "--build-deps-for and --all-build-deps can be used only with the "
         "setup.py, setup.cfg and pyproject.toml specs."
@@ -2930,10 +2930,9 @@ def test_extras_fail_with_requirements_in(runner, tmpdir):
     """
     Test that passing ``--extra`` with ``requirements.in`` input file fails.
     """
-    path = os.path.join(tmpdir, "requirements.in")
-    with open(path, "w") as stream:
-        stream.write("\n")
-    out = runner.invoke(cli, ["-n", "--extra", "something", path])
+    path = pathlib.Path(tmpdir) / "requirements.in"
+    path.write_text("\n")
+    out = runner.invoke(cli, ["-n", "--extra", "something", os.fspath(path)])
     assert out.exit_code == 2
     exp = "--extra has effect only with setup.py and PEP-517 input formats"
     assert exp in out.stderr

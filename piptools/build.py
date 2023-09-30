@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import collections
 import contextlib
-import os
 import pathlib
 import sys
 import tempfile
@@ -43,7 +42,7 @@ class ProjectMetadata:
 
 
 def build_project_metadata(
-    src_file: str,
+    src_file: pathlib.Path,
     build_targets: tuple[str, ...],
     *,
     isolated: bool,
@@ -67,7 +66,7 @@ def build_project_metadata(
     :param quiet: Whether to suppress the output of subprocesses.
     """
 
-    src_dir = os.path.dirname(os.path.abspath(src_file))
+    src_dir = src_file.absolute().parent
     with _create_project_builder(src_dir, isolated=isolated, quiet=quiet) as builder:
         metadata = _build_project_wheel_metadata(builder)
         extras = tuple(metadata.get_all("Provides-Extra") or ())
@@ -91,21 +90,19 @@ def build_project_metadata(
 
 @contextlib.contextmanager
 def _create_project_builder(
-    src_dir: str, *, isolated: bool, quiet: bool
+    src_dir: pathlib.Path, *, isolated: bool, quiet: bool
 ) -> Iterator[build.ProjectBuilder]:
     if quiet:
         runner = pyproject_hooks.quiet_subprocess_runner
     else:
         runner = pyproject_hooks.default_subprocess_runner
 
-    source_dir = os.fspath(src_dir)
-
     if not isolated:
-        yield build.ProjectBuilder(source_dir, runner=runner)
+        yield build.ProjectBuilder(src_dir, runner=runner)
         return
 
     with build.env.DefaultIsolatedEnv() as env:
-        builder = build.ProjectBuilder.from_isolated_env(env, source_dir, runner)
+        builder = build.ProjectBuilder.from_isolated_env(env, src_dir, runner)
         env.install(builder.build_system_requires)
         env.install(builder.get_requires_for_build("wheel"))
         yield builder
@@ -124,15 +121,15 @@ def _get_name(metadata: PackageMetadata) -> str:
 
 
 def _prepare_requirements(
-    metadata: PackageMetadata, src_file: str
+    metadata: PackageMetadata, src_file: pathlib.Path
 ) -> Iterator[InstallRequirement]:
     package_name = _get_name(metadata)
     comes_from = f"{package_name} ({src_file})"
+    package_dir = src_file.absolute().parent
 
     for req in metadata.get_all("Requires-Dist") or []:
         parts = parse_req_from_line(req, comes_from)
         if parts.requirement.name == package_name:
-            package_dir = os.path.dirname(os.path.abspath(src_file))
             # Replace package name with package directory in the requirement
             # string so that pip can find the package as self-referential.
             # Note the string can contain extras, so we need to replace only
@@ -151,7 +148,7 @@ def _prepare_requirements(
 
 def _prepare_build_requirements(
     builder: build.ProjectBuilder,
-    src_file: str,
+    src_file: pathlib.Path,
     build_targets: tuple[str, ...],
     package_name: str,
 ) -> Iterator[InstallRequirement]:
@@ -160,7 +157,7 @@ def _prepare_build_requirements(
     # Build requirements will only be present if a pyproject.toml file exists,
     # but if there is also a setup.py file then only that will be explicitly
     # processed due to the order of `DEFAULT_REQUIREMENTS_FILES`.
-    src_file = os.path.join(os.path.dirname(src_file), PYPROJECT_TOML)
+    src_file = src_file.parent / PYPROJECT_TOML
 
     for req in builder.build_system_requires:
         result[req].add(f"{package_name} ({src_file}::build-system.requires)")

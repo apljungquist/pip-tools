@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import pathlib
 import shutil
 
 import pytest
@@ -21,11 +21,11 @@ def test_build_project_metadata_resolved_correct_build_dependencies(
     """
     # When used as argument to the runner it is not passed to pip
     monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)
-    src_pkg_path = os.path.join(PACKAGES_PATH, "small_fake_with_build_deps")
+    src_pkg_path = pathlib.Path(PACKAGES_PATH) / "small_fake_with_build_deps"
     shutil.copytree(src_pkg_path, tmp_path, dirs_exist_ok=True)
     src_file = tmp_path / "setup.py"
     metadata = build_project_metadata(
-        os.fspath(src_file), ("editable",), isolated=True, quiet=False
+        src_file, ("editable",), isolated=True, quiet=False
     )
     build_requirements = sorted(r.name for r in metadata.build_requirements)
     assert build_requirements == [

@@ -346,7 +346,7 @@ def cli(
             setup_file_found = True
             try:
                 metadata = build_project_metadata(
-                    src_file=src_file,
+                    src_file=Path(src_file),
                     build_targets=build_deps_targets,
                     isolated=build_isolation,
                     quiet=log.verbosity <= 0,
