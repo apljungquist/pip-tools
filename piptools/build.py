@@ -117,7 +117,9 @@ def _build_project_wheel_metadata(
 
 
 def _get_name(metadata: PackageMetadata) -> str:
-    return metadata.get_all("Name")[0]  # type: ignore
+    retval = metadata.get_all("Name")[0]  # type: ignore[index]
+    assert isinstance(retval, str)
+    return retval
 
 
 def _prepare_requirements(
