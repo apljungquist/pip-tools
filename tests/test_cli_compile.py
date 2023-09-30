@@ -2806,7 +2806,7 @@ def test_all_extras_and_all_build_deps(
 
 
 @backtracking_resolver_only
-def test_all_build_distributions(runner, tmp_path, monkeypatch):
+def test_all_build_deps(runner, tmp_path, monkeypatch):
     """
     Test that ``--all-build-deps`` is equivalent to specifying every
     ``--build-deps-for``.
@@ -2825,7 +2825,7 @@ def test_all_build_distributions(runner, tmp_path, monkeypatch):
         ],
     )
     assert out.exit_code == 0
-    assert func.call_args.kwargs["build_distributions"] == (
+    assert func.call_args.kwargs["build_targets"] == (
         "editable",
         "sdist",
         "wheel",
@@ -2833,7 +2833,7 @@ def test_all_build_distributions(runner, tmp_path, monkeypatch):
 
 
 @backtracking_resolver_only
-def test_only_build_distributions(runner, tmp_path, monkeypatch):
+def test_only_build_deps(runner, tmp_path, monkeypatch):
     """
     Test that ``--only-build-deps`` excludes dependencies other than build dependencies.
     """
@@ -2856,7 +2856,7 @@ def test_only_build_distributions(runner, tmp_path, monkeypatch):
 
 
 @backtracking_resolver_only
-def test_all_build_distributions_fail_with_build_distribution(runner):
+def test_all_build_deps_fail_with_build_target(runner):
     """
     Test that passing ``--all-build-deps`` and ``--build-deps-for`` fails.
     """

@@ -26,7 +26,7 @@ from ..resolver import BacktrackingResolver, LegacyResolver
 from ..utils import dedup, drop_extras, is_pinned_requirement, key_from_ireq
 from ..writer import OutputWriter
 from . import options
-from .options import BuildDistributionT
+from .options import BuildTargetT
 
 DEFAULT_REQUIREMENTS_FILES = (
     "requirements.in",
@@ -154,7 +154,7 @@ def cli(
     config: Path | None,
     no_config: bool,
     constraint: tuple[str, ...],
-    build_deps_for_distributions: tuple[BuildDistributionT, ...],
+    build_deps_targets: tuple[BuildTargetT, ...],
     all_build_deps: bool,
     only_build_deps: bool,
 ) -> None:
@@ -164,14 +164,14 @@ def cli(
     """
     log.verbosity = verbose - quiet
 
-    if all_build_deps and build_deps_for_distributions:
+    if all_build_deps and build_deps_targets:
         raise click.BadParameter(
             "--build-deps-for has no effect when used with --all-build-deps"
         )
     elif all_build_deps:
-        build_deps_for_distributions = options.ALL_BUILD_DISTRIBUTIONS
+        build_deps_targets = options.ALL_BUILD_TARGETS
 
-    if only_build_deps and not build_deps_for_distributions:
+    if only_build_deps and not build_deps_targets:
         raise click.BadParameter(
             "--only-build-deps requires either --build-deps-for or --all-build-deps"
         )
@@ -315,7 +315,7 @@ def cli(
     setup_file_found = False
     for src_file in src_files:
         is_setup_file = os.path.basename(src_file) in METADATA_FILENAMES
-        if not is_setup_file and build_deps_for_distributions:
+        if not is_setup_file and build_deps_targets:
             msg = (
                 "--build-deps-for and --all-build-deps can be used only with the "
                 "setup.py, setup.cfg and pyproject.toml specs."
@@ -347,7 +347,7 @@ def cli(
             try:
                 metadata = build_project_metadata(
                     src_file=src_file,
-                    build_distributions=build_deps_for_distributions,
+                    build_targets=build_deps_targets,
                     isolated=build_isolation,
                     quiet=log.verbosity <= 0,
                 )
@@ -363,7 +363,7 @@ def cli(
                         msg = "--extra has no effect when used with --all-extras"
                         raise click.BadParameter(msg)
                     extras = metadata.extras
-            if build_deps_for_distributions:
+            if build_deps_targets:
                 constraints.extend(metadata.build_requirements)
         else:
             constraints.extend(

@@ -44,7 +44,7 @@ class ProjectMetadata:
 
 def build_project_metadata(
     src_file: str,
-    build_distributions: tuple[str, ...],
+    build_targets: tuple[str, ...],
     *,
     isolated: bool,
     quiet: bool,
@@ -55,11 +55,11 @@ def build_project_metadata(
     Uses the ``prepare_metadata_for_build_wheel`` hook for the wheel metadata
     if available, otherwise ``build_wheel``.
 
-    Uses the ``prepare_metadata_for_build_{dist}`` hook for each ``build_distributions``
+    Uses the ``prepare_metadata_for_build_{target}`` hook for each ``build_targets``
     if available.
 
     :param src_file: Project source file
-    :param build_distributions: A tuple of build distributions to get the dependencies
+    :param build_targets: A tuple of build targets to get the dependencies
                                 of (``sdist`` or ``wheel`` or ``editable``).
     :param isolated: Whether to run invoke the backend in the current
                      environment or to create an isolated one and invoke it
@@ -78,7 +78,7 @@ def build_project_metadata(
             _prepare_build_requirements(
                 builder=builder,
                 src_file=src_file,
-                distributions=build_distributions,
+                build_targets=build_targets,
                 package_name=_get_name(metadata),
             )
         )
@@ -152,7 +152,7 @@ def _prepare_requirements(
 def _prepare_build_requirements(
     builder: build.ProjectBuilder,
     src_file: str,
-    distributions: tuple[str, ...],
+    build_targets: tuple[str, ...],
     package_name: str,
 ) -> Iterator[InstallRequirement]:
     result = collections.defaultdict(set)
@@ -164,10 +164,10 @@ def _prepare_build_requirements(
 
     for req in builder.build_system_requires:
         result[req].add(f"{package_name} ({src_file}::build-system.requires)")
-    for dist in distributions:
-        for req in builder.get_requires_for_build(dist):
+    for build_target in build_targets:
+        for req in builder.get_requires_for_build(build_target):
             result[req].add(
-                f"{package_name} ({src_file}::build-system.backend::{dist})"
+                f"{package_name} ({src_file}::build-system.backend::{build_target})"
             )
 
     for req, comes_from_sources in result.items():

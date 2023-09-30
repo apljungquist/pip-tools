@@ -15,9 +15,9 @@ def test_build_project_metadata_resolved_correct_build_dependencies(
 ):
     """Test that the resolved build dependencies are correct.
 
-    Because this is a slow process we test it only for one build distribution and rely
+    Because this is a slow process we test it only for one build target and rely
     on ``test_all_extras_and_all_build_deps`` to test that it works with multiple build
-    distributions.
+    targets.
     """
     # When used as argument to the runner it is not passed to pip
     monkeypatch.setenv("PIP_FIND_LINKS", fake_dists_with_build_deps)

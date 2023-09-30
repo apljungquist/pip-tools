@@ -9,8 +9,8 @@ from pip._internal.utils.misc import redact_auth_from_url
 from piptools.locations import CACHE_DIR, DEFAULT_CONFIG_FILE_NAMES
 from piptools.utils import UNSAFE_PACKAGES, override_defaults_from_config_file
 
-BuildDistributionT = Literal["sdist", "wheel", "editable"]
-ALL_BUILD_DISTRIBUTIONS: tuple[BuildDistributionT, ...] = (
+BuildTargetT = Literal["sdist", "wheel", "editable"]
+ALL_BUILD_TARGETS: tuple[BuildTargetT, ...] = (
     "editable",
     "sdist",
     "wheel",
@@ -374,9 +374,9 @@ user = click.option(
 
 build_deps_for = click.option(
     "--build-deps-for",
-    "build_deps_for_distributions",
+    "build_deps_targets",
     multiple=True,
-    type=click.Choice(ALL_BUILD_DISTRIBUTIONS),
+    type=click.Choice(ALL_BUILD_TARGETS),
     help="Name of a build target to install dependencies for. "
     "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
     "well; may be used more than once.",
