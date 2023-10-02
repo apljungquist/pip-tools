@@ -66,7 +66,7 @@ def build_project_metadata(
     :param quiet: Whether to suppress the output of subprocesses.
     """
 
-    src_dir = src_file.absolute().parent
+    src_dir = src_file.parent
     with _create_project_builder(src_dir, isolated=isolated, quiet=quiet) as builder:
         metadata = _build_project_wheel_metadata(builder)
         extras = tuple(metadata.get_all("Provides-Extra") or ())
@@ -127,7 +127,7 @@ def _prepare_requirements(
 ) -> Iterator[InstallRequirement]:
     package_name = _get_name(metadata)
     comes_from = f"{package_name} ({src_file})"
-    package_dir = src_file.absolute().parent
+    package_dir = src_file.parent
 
     for req in metadata.get_all("Requires-Dist") or []:
         parts = parse_req_from_line(req, comes_from)
