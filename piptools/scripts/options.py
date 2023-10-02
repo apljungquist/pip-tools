@@ -377,7 +377,7 @@ build_deps_for = click.option(
     "build_deps_targets",
     multiple=True,
     type=click.Choice(ALL_BUILD_TARGETS),
-    help="Name of a build target to install dependencies for. "
+    help="Name of a build target to extract dependencies for. "
     "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
     "well; may be used more than once.",
 )
@@ -386,13 +386,14 @@ all_build_deps = click.option(
     "--all-build-deps",
     is_flag=True,
     default=False,
-    help="Install dependencies for all build targets. "
-    "Static dependencies declared in pyproject.toml will be included as well.",
+    help="Extract dependencies for all build targets. "
+    "Static dependencies declared in 'pyproject.toml::build-system.requires' will be included as "
+    "well.",
 )
 
 only_build_deps = click.option(
     "--only-build-deps",
     is_flag=True,
     default=False,
-    help="Install a package only if it is a build dependency.",
+    help="Extract a package only if it is a build dependency.",
 )
